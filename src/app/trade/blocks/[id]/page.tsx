@@ -196,7 +196,7 @@ export default function TradeBlockDetailPage({ params }: { params: Promise<{ id:
   const myAcceptedBid = myBids.find((b) => b.status === "accepted");
   const myNeedsConfirmation = myBids.filter((b) => b.status === "needs_confirmation");
   const isAssignedTrade = !!myAcceptedBid;
-  const canBid = (block.status === "open_for_bids" || block.status === "awarded") && block.depends_on_completed;
+  const canBid = block.status === "open_for_bids" || block.status === "awarded";
   const canUpdateProgress = isAssignedTrade && (block.status === "awarded" || block.status === "in_progress" || block.status === "delayed");
 
   return (
@@ -283,7 +283,7 @@ export default function TradeBlockDetailPage({ params }: { params: Promise<{ id:
             {!block.depends_on_completed && (
               <p className="text-sm text-amber-600 mt-2 flex items-center gap-1.5">
                 <AlertTriangle className="w-4 h-4" />
-                Upstream blocks are not yet complete. Bidding may be affected if timelines shift.
+                Upstream blocks are not yet complete. Work cannot begin until they finish, and timelines may shift.
               </p>
             )}
           </div>

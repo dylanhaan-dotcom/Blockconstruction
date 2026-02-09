@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Bid, Appreciation } from "@/lib/types";
-import { Briefcase, DollarSign, Heart, Star, Coffee, UtensilsCrossed, Search } from "lucide-react";
+import { Briefcase, DollarSign, Heart, Star, Coffee, UtensilsCrossed, Search, Calendar } from "lucide-react";
 
 export default function TradeDashboard() {
   const { currentUser } = useApp();
@@ -48,10 +48,16 @@ export default function TradeDashboard() {
             {currentUser.trade_type} &middot; {currentUser.rating} ★ ({currentUser.rating_count} reviews)
           </p>
         </div>
-        <Link href="/trade/blocks" className="btn-primary flex items-center gap-2 w-fit">
-          <Search className="w-4 h-4" />
-          Browse Available Blocks
-        </Link>
+        <div className="flex items-center gap-3">
+          <Link href="/trade/schedule" className="btn-secondary flex items-center gap-2 w-fit">
+            <Calendar className="w-4 h-4" />
+            My Schedule
+          </Link>
+          <Link href="/trade/blocks" className="btn-primary flex items-center gap-2 w-fit">
+            <Search className="w-4 h-4" />
+            Browse Available Blocks
+          </Link>
+        </div>
       </div>
 
       {/* Stats */}

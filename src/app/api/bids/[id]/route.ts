@@ -99,6 +99,12 @@ export async function PUT(
 
   // Handle reopening: owner puts bid back to pending and reopens block
   if (status === "pending" && bid.status === "accepted") {
+    // Prevent reopening completed blocks
+    const blockCheck = db.prepare("SELECT status FROM blocks WHERE id = ?").get(bid.block_id) as { status: string };
+    if (blockCheck.status === "completed") {
+      return NextResponse.json({ error: "Cannot reopen bidding on a completed block" }, { status: 400 });
+    }
+
     db.prepare("UPDATE blocks SET status = 'open_for_bids', updated_at = datetime('now') WHERE id = ?").run(bid.block_id);
 
     db.prepare(`

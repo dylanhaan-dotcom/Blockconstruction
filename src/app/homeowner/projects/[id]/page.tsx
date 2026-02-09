@@ -10,7 +10,7 @@ import { Block, Bid, Project, Appreciation, ProgressUpdate } from "@/lib/types";
 import {
   ArrowLeft, ChevronDown, ChevronUp, DollarSign, Heart,
   Clock, CheckCircle2, AlertTriangle, ArrowRight, Coffee, UtensilsCrossed, X,
-  Share2, Clipboard, Settings, BarChart3
+  Share2, Clipboard, Settings, BarChart3, Pencil
 } from "lucide-react";
 
 type TabView = "timeline" | "gantt" | "blocks";
@@ -113,13 +113,14 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     fetchData();
   };
 
-  const openAllBlocksForBids = async () => {
-    await fetch(`/api/projects/${id}`, {
+  const saveBlockEdit = async (blockId: number, updates: Record<string, unknown>, reopenBids?: boolean) => {
+    await fetch(`/api/blocks/${blockId}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ open_all_bids: true }),
+      body: JSON.stringify({ ...updates, reopen_bids: reopenBids }),
     });
     fetchData();
+    fetchBlockDetail(blockId);
   };
 
   const generateShareLink = async () => {
@@ -253,12 +254,9 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
             />
             <span className="text-sm text-gray-700">Allow Parallel Bidding</span>
           </label>
-          <button
-            onClick={openAllBlocksForBids}
-            className="btn-primary btn-sm"
-          >
-            Open All Blocks for Bids
-          </button>
+          <p className="text-xs text-gray-500">
+            Dependencies govern when work can start, not when bidding opens. Open individual blocks for bids from the Blocks tab.
+          </p>
         </div>
       </div>
 
@@ -476,15 +474,20 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                     </div>
 
                     {/* Actions */}
-                    {block.status === "pending" && block.depends_on_completed && (
-                      <button onClick={() => openForBids(block.id)} className="btn-primary btn-sm mb-4">
-                        Open for Bids
-                      </button>
-                    )}
-                    {block.status === "pending" && !block.depends_on_completed && (
+                    <div className="flex flex-wrap items-center gap-2 mb-4">
+                      {block.status === "pending" && (
+                        <button onClick={() => openForBids(block.id)} className="btn-primary btn-sm">
+                          Open for Bids
+                        </button>
+                      )}
+                      {block.status !== "completed" && (
+                        <BlockEditButton block={block} blockDetail={blockDetail} onSave={saveBlockEdit} />
+                      )}
+                    </div>
+                    {!block.depends_on_completed && block.status !== "completed" && (
                       <p className="text-sm text-amber-600 mb-4 flex items-center gap-1.5">
                         <AlertTriangle className="w-4 h-4" />
-                        Waiting for upstream blocks to complete before opening for bids.
+                        Upstream blocks not yet complete. Work cannot begin until they finish.
                       </p>
                     )}
 
@@ -547,7 +550,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                                       Accept Bid
                                     </button>
                                   )}
-                                  {bid.status === "accepted" && (
+                                  {bid.status === "accepted" && block.status !== "completed" && (
                                     <>
                                       <button
                                         onClick={() => reopenBidding(bid.id)}
@@ -569,6 +572,21 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                                         Send Appreciation
                                       </button>
                                     </>
+                                  )}
+                                  {bid.status === "accepted" && block.status === "completed" && (
+                                    <button
+                                      onClick={() =>
+                                        setShowAppreciationModal({
+                                          tradeId: bid.trade_id,
+                                          tradeName: bid.trade_name || "Trade",
+                                          blockId: block.id,
+                                        })
+                                      }
+                                      className="flex items-center gap-1 text-xs text-pink-600 hover:text-pink-700 mt-2"
+                                    >
+                                      <Heart className="w-3.5 h-3.5" />
+                                      Send Appreciation
+                                    </button>
                                   )}
                                 </div>
                               </div>
@@ -730,6 +748,108 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+const TRADE_TYPES = ["Electrician", "Plumber", "Carpenter", "Tile Installer", "Painter", "HVAC", "Roofer", "Concrete", "Landscaper", "General Contractor"];
+
+function BlockEditButton({
+  block,
+  blockDetail,
+  onSave,
+}: {
+  block: Block;
+  blockDetail: Record<string, unknown>;
+  onSave: (blockId: number, updates: Record<string, unknown>, reopenBids?: boolean) => Promise<void>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [editTitle, setEditTitle] = useState(block.title);
+  const [editDescription, setEditDescription] = useState(block.description || "");
+  const [editTradeType, setEditTradeType] = useState(block.trade_type || "");
+  const [editDesiredDate, setEditDesiredDate] = useState(block.desired_completion_date || "");
+  const [editSpecialReq, setEditSpecialReq] = useState(block.special_requirements || "");
+  const [saving, setSaving] = useState(false);
+
+  const hasAcceptedBids = ((blockDetail.bids as Bid[]) || []).some((b) => b.status === "accepted");
+  const needsReopen = hasAcceptedBids && block.status !== "pending";
+
+  const handleSave = async () => {
+    setSaving(true);
+    await onSave(
+      block.id,
+      {
+        title: editTitle,
+        description: editDescription,
+        trade_type: editTradeType,
+        desired_completion_date: editDesiredDate || null,
+        special_requirements: editSpecialReq || null,
+      },
+      needsReopen
+    );
+    setSaving(false);
+    setEditing(false);
+  };
+
+  if (!editing) {
+    return (
+      <button
+        onClick={() => setEditing(true)}
+        className="btn-secondary btn-sm flex items-center gap-1.5"
+      >
+        <Pencil className="w-3.5 h-3.5" />
+        Edit Block
+      </button>
+    );
+  }
+
+  return (
+    <div className="w-full mt-2 p-4 bg-white rounded-lg border-2 border-primary-200">
+      <h3 className="text-sm font-semibold text-primary-600 mb-3 flex items-center gap-1.5">
+        <Pencil className="w-3.5 h-3.5" />
+        Edit Block
+      </h3>
+      <div className="grid sm:grid-cols-2 gap-3">
+        <div>
+          <label className="label">Block Title *</label>
+          <input className="input" value={editTitle} onChange={(e) => setEditTitle(e.target.value)} required />
+        </div>
+        <div>
+          <label className="label">Trade Type</label>
+          <select className="input" value={editTradeType} onChange={(e) => setEditTradeType(e.target.value)}>
+            <option value="">Select trade...</option>
+            {TRADE_TYPES.map((t) => (
+              <option key={t} value={t}>{t}</option>
+            ))}
+          </select>
+        </div>
+        <div className="sm:col-span-2">
+          <label className="label">Description</label>
+          <textarea className="input" rows={2} value={editDescription} onChange={(e) => setEditDescription(e.target.value)} />
+        </div>
+        <div>
+          <label className="label">Desired Completion Date</label>
+          <input className="input" type="date" value={editDesiredDate} onChange={(e) => setEditDesiredDate(e.target.value)} />
+        </div>
+        <div>
+          <label className="label">Special Requirements</label>
+          <input className="input" value={editSpecialReq} onChange={(e) => setEditSpecialReq(e.target.value)} />
+        </div>
+      </div>
+      {needsReopen && (
+        <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+          <p className="text-sm text-amber-800 flex items-center gap-1.5">
+            <AlertTriangle className="w-4 h-4" />
+            Saving changes will reopen this block for bidding since it has accepted bids.
+          </p>
+        </div>
+      )}
+      <div className="flex items-center gap-2 mt-3">
+        <button onClick={handleSave} disabled={saving || !editTitle} className="btn-primary btn-sm">
+          {saving ? "Saving..." : needsReopen ? "Save & Reopen Bids" : "Save Changes"}
+        </button>
+        <button onClick={() => setEditing(false)} className="btn-secondary btn-sm">Cancel</button>
+      </div>
     </div>
   );
 }

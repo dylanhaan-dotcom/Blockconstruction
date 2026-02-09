@@ -82,7 +82,7 @@ export async function PUT(
   const { id } = await params;
   const db = getDb();
   const body = await request.json();
-  const { status, estimated_completion_date, title, description, trade_type, desired_completion_date, special_requirements } = body;
+  const { status, estimated_completion_date, title, description, trade_type, desired_completion_date, special_requirements, reopen_bids } = body;
 
   if (status) {
     db.prepare("UPDATE blocks SET status = ?, updated_at = datetime('now') WHERE id = ?").run(status, Number(id));
@@ -107,6 +107,31 @@ export async function PUT(
   }
   if (special_requirements !== undefined) {
     db.prepare("UPDATE blocks SET special_requirements = ?, updated_at = datetime('now') WHERE id = ?").run(special_requirements, Number(id));
+  }
+
+  // Reopen bids: set block to open_for_bids and all accepted bids to pending
+  if (reopen_bids) {
+    db.prepare("UPDATE blocks SET status = 'open_for_bids', updated_at = datetime('now') WHERE id = ?").run(Number(id));
+    db.prepare("UPDATE bids SET status = 'pending', updated_at = datetime('now') WHERE block_id = ? AND status = 'accepted'").run(Number(id));
+
+    // Notify affected trades
+    const affectedTrades = db.prepare(
+      "SELECT DISTINCT bi.trade_id, u.name as trade_name FROM bids bi JOIN users u ON u.id = bi.trade_id WHERE bi.block_id = ? AND bi.status = 'pending'"
+    ).all(Number(id)) as { trade_id: number; trade_name: string }[];
+
+    const blockInfo = db.prepare("SELECT b.title, b.project_id FROM blocks b WHERE b.id = ?").get(Number(id)) as { title: string; project_id: number };
+
+    for (const trade of affectedTrades) {
+      db.prepare(`
+        INSERT INTO notifications (user_id, type, title, message, related_project_id, related_block_id)
+        VALUES (?, 'bid_reopened', 'Block Updated & Reopened', ?, ?, ?)
+      `).run(
+        trade.trade_id,
+        `The block "${blockInfo.title}" has been updated and reopened for bidding. Your bid is now pending.`,
+        blockInfo.project_id,
+        Number(id)
+      );
+    }
   }
 
   // Handle delay notifications
