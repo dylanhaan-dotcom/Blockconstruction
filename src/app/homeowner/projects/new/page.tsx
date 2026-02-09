@@ -25,6 +25,7 @@ export default function NewProjectPage() {
   const [projectType, setProjectType] = useState("");
   const [description, setDescription] = useState("");
   const [budget, setBudget] = useState("");
+  const [allowParallelBidding, setAllowParallelBidding] = useState(false);
   const [blocks, setBlocks] = useState<BlockForm[]>([]);
   const [saving, setSaving] = useState(false);
 
@@ -92,6 +93,7 @@ export default function NewProjectPage() {
         project_type: projectType,
         description,
         budget: budget ? Number(budget) : null,
+        allow_parallel_bidding: allowParallelBidding ? 1 : 0,
       }),
     });
     const project = await projectRes.json();
@@ -178,6 +180,20 @@ export default function NewProjectPage() {
             <div>
               <label className="label">Budget ($)</label>
               <input className="input" type="number" value={budget} onChange={(e) => setBudget(e.target.value)} placeholder="e.g., 45000" />
+            </div>
+            <div className="sm:col-span-2">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={allowParallelBidding}
+                  onChange={(e) => setAllowParallelBidding(e.target.checked)}
+                  className="w-4 h-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                />
+                <span className="text-sm font-medium text-gray-700">Allow parallel bidding</span>
+              </label>
+              <p className="text-xs text-gray-500 mt-1 ml-6">
+                Open all blocks for bids simultaneously, instead of waiting for upstream blocks to complete first.
+              </p>
             </div>
           </div>
         </div>

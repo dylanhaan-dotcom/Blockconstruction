@@ -35,7 +35,7 @@ export function seedDatabase() {
 
   // Kitchen Remodel project (Sarah's project - in progress with various block states)
   const insertProject = db.prepare(
-    `INSERT INTO projects (owner_id, title, address, project_type, description, status, budget) VALUES (?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO projects (owner_id, title, address, project_type, description, status, budget, allow_parallel_bidding, share_token) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
 
   insertProject.run(
@@ -45,7 +45,9 @@ export function seedDatabase() {
     "Kitchen Remodel",
     "Full kitchen renovation including new cabinets, countertops, electrical upgrades, plumbing updates, tile backsplash, and painting. Budget is $45,000.",
     "in_progress",
-    45000
+    45000,
+    0,
+    "abc123kitchenremodel"
   );
 
   // Blocks for the Kitchen Remodel
@@ -176,7 +178,9 @@ export function seedDatabase() {
     "Bathroom Addition",
     "Adding a full bathroom to the basement including shower, toilet, vanity, and tile work.",
     "planning",
-    25000
+    25000,
+    1,
+    null
   );
 
   // A few blocks for David's project

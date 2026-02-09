@@ -8,7 +8,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { Bid, ProgressUpdate } from "@/lib/types";
 import {
   ArrowLeft, MapPin, Calendar, Clock, CheckCircle2,
-  AlertTriangle, Send, ArrowRight, ClipboardEdit
+  AlertTriangle, Send, ArrowRight, ClipboardEdit, Pencil
 } from "lucide-react";
 
 interface DepBlock { id: number; title: string; status: string }
@@ -53,6 +53,13 @@ export default function TradeBlockDetailPage({ params }: { params: Promise<{ id:
   const [isRevision, setIsRevision] = useState(false);
   const [revisionReason, setRevisionReason] = useState("");
   const [submitting, setSubmitting] = useState(false);
+
+  // Edit bid state
+  const [editingBidId, setEditingBidId] = useState<number | null>(null);
+  const [editPrice, setEditPrice] = useState("");
+  const [editStartDate, setEditStartDate] = useState("");
+  const [editDuration, setEditDuration] = useState("");
+  const [editDescription, setEditDescription] = useState("");
 
   // Progress form
   const [showProgressForm, setShowProgressForm] = useState(false);
@@ -117,6 +124,43 @@ export default function TradeBlockDetailPage({ params }: { params: Promise<{ id:
     fetchBlock();
   };
 
+  const startEditBid = (bid: Bid) => {
+    setEditingBidId(bid.id);
+    setEditPrice(String(bid.price));
+    setEditStartDate(bid.start_date || "");
+    setEditDuration(bid.duration_days ? String(bid.duration_days) : "");
+    setEditDescription(bid.description || "");
+  };
+
+  const saveEditBid = async (bidId: number) => {
+    setSubmitting(true);
+    await fetch(`/api/bids/${bidId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        price: Number(editPrice),
+        start_date: editStartDate || null,
+        duration_days: editDuration ? Number(editDuration) : null,
+        description: editDescription,
+      }),
+    });
+    setEditingBidId(null);
+    setSubmitting(false);
+    fetchBlock();
+  };
+
+  const confirmSchedule = async (bidId: number) => {
+    setSubmitting(true);
+    await fetch(`/api/bids/${bidId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ delay_confirmed: true }),
+    });
+    setSubmitting(false);
+    fetchBlock();
+    refreshNotifications();
+  };
+
   const submitProgress = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentUser) return;
@@ -150,6 +194,7 @@ export default function TradeBlockDetailPage({ params }: { params: Promise<{ id:
   const progressUpdates = block.progress_updates || [];
   const myBids = bids.filter((b) => b.trade_id === currentUser.id);
   const myAcceptedBid = myBids.find((b) => b.status === "accepted");
+  const myNeedsConfirmation = myBids.filter((b) => b.status === "needs_confirmation");
   const isAssignedTrade = !!myAcceptedBid;
   const canBid = (block.status === "open_for_bids" || block.status === "awarded") && block.depends_on_completed;
   const canUpdateProgress = isAssignedTrade && (block.status === "awarded" || block.status === "in_progress" || block.status === "delayed");
@@ -387,6 +432,49 @@ export default function TradeBlockDetailPage({ params }: { params: Promise<{ id:
         </div>
       )}
 
+      {/* Delay Confirmation Banner */}
+      {myNeedsConfirmation.length > 0 && (
+        <div className="mb-6 p-4 bg-amber-50 border-2 border-amber-300 rounded-xl">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" />
+            <div className="flex-1">
+              <h3 className="font-semibold text-amber-800">Schedule Confirmation Required</h3>
+              <p className="text-sm text-amber-700 mt-1">
+                An upstream block has been delayed. Please confirm you can still work with the updated schedule, or revise your bid with new terms.
+              </p>
+              {myNeedsConfirmation.map((bid) => (
+                <div key={bid.id} className="mt-3 p-3 bg-white rounded-lg border border-amber-200">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <StatusBadge status={bid.status} />
+                      <span className="text-sm font-medium">${bid.price.toLocaleString()}</span>
+                    </div>
+                  </div>
+                  {bid.start_date && <p className="text-xs text-gray-500">Start: {bid.start_date} | Duration: {bid.duration_days || "?"} days</p>}
+                  <div className="flex items-center gap-2 mt-3">
+                    <button
+                      onClick={() => confirmSchedule(bid.id)}
+                      disabled={submitting}
+                      className="btn-primary btn-sm flex items-center gap-1.5"
+                    >
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      {submitting ? "Confirming..." : "Confirm Schedule"}
+                    </button>
+                    <button
+                      onClick={() => startEditBid(bid)}
+                      className="btn-secondary btn-sm flex items-center gap-1.5"
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                      Revise Bid
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* My Bids */}
       {myBids.length > 0 && (
         <div className="mb-6">
@@ -395,25 +483,75 @@ export default function TradeBlockDetailPage({ params }: { params: Promise<{ id:
             {myBids.map((bid) => (
               <div
                 key={bid.id}
-                className={`card !p-4 ${bid.status === "accepted" ? "border-green-300 bg-green-50" : ""}`}
+                className={`card !p-4 ${
+                  bid.status === "accepted" ? "border-green-300 bg-green-50" :
+                  bid.status === "needs_confirmation" ? "border-amber-300 bg-amber-50" : ""
+                }`}
               >
-                <div className="flex items-start justify-between">
+                {editingBidId === bid.id ? (
+                  /* Inline Edit Form */
                   <div>
-                    <div className="flex items-center gap-2">
-                      <StatusBadge status={bid.status} />
-                      {bid.is_revision ? (
-                        <span className="badge bg-orange-100 text-orange-700">Revised</span>
-                      ) : null}
-                      <span className="text-xs text-gray-400">{new Date(bid.created_at).toLocaleDateString()}</span>
+                    <h3 className="text-sm font-semibold text-primary-600 mb-3 flex items-center gap-1.5">
+                      <Pencil className="w-3.5 h-3.5" />
+                      Edit Bid
+                    </h3>
+                    <div className="grid sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="label">Price ($) *</label>
+                        <input className="input" type="number" value={editPrice} onChange={(e) => setEditPrice(e.target.value)} required min="1" />
+                      </div>
+                      <div>
+                        <label className="label">Proposed Start Date</label>
+                        <input className="input" type="date" value={editStartDate} onChange={(e) => setEditStartDate(e.target.value)} />
+                      </div>
+                      <div>
+                        <label className="label">Duration (days)</label>
+                        <input className="input" type="number" value={editDuration} onChange={(e) => setEditDuration(e.target.value)} min="1" />
+                      </div>
+                      <div className="sm:col-span-2">
+                        <label className="label">Description</label>
+                        <textarea className="input" rows={2} value={editDescription} onChange={(e) => setEditDescription(e.target.value)} />
+                      </div>
                     </div>
-                    {bid.description && <p className="text-sm text-gray-600 mt-1">{bid.description}</p>}
-                    <div className="flex items-center gap-4 mt-2 text-xs text-gray-500">
-                      {bid.start_date && <span>Start: {bid.start_date}</span>}
-                      {bid.duration_days && <span>Duration: {bid.duration_days} days</span>}
+                    <div className="flex items-center gap-2 mt-3">
+                      <button onClick={() => saveEditBid(bid.id)} disabled={submitting} className="btn-primary btn-sm">
+                        {submitting ? "Saving..." : "Save Changes"}
+                      </button>
+                      <button onClick={() => setEditingBidId(null)} className="btn-secondary btn-sm">Cancel</button>
                     </div>
                   </div>
-                  <p className="text-xl font-bold">${bid.price.toLocaleString()}</p>
-                </div>
+                ) : (
+                  /* Normal Bid Display */
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <StatusBadge status={bid.status} />
+                        {bid.is_revision ? (
+                          <span className="badge bg-orange-100 text-orange-700">Revised</span>
+                        ) : null}
+                        {bid.delay_confirmed ? (
+                          <span className="badge bg-green-100 text-green-700">Schedule Confirmed</span>
+                        ) : null}
+                        <span className="text-xs text-gray-400">{new Date(bid.created_at).toLocaleDateString()}</span>
+                      </div>
+                      {bid.description && <p className="text-sm text-gray-600 mt-1">{bid.description}</p>}
+                      <div className="flex items-center gap-4 mt-2 text-xs text-gray-500">
+                        {bid.start_date && <span>Start: {bid.start_date}</span>}
+                        {bid.duration_days && <span>Duration: {bid.duration_days} days</span>}
+                      </div>
+                      {(bid.status === "pending" || bid.status === "needs_confirmation") && (
+                        <button
+                          onClick={() => startEditBid(bid)}
+                          className="mt-2 text-xs text-primary-600 hover:text-primary-800 flex items-center gap-1"
+                        >
+                          <Pencil className="w-3 h-3" />
+                          Edit Bid
+                        </button>
+                      )}
+                    </div>
+                    <p className="text-xl font-bold">${bid.price.toLocaleString()}</p>
+                  </div>
+                )}
               </div>
             ))}
           </div>

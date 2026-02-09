@@ -18,6 +18,7 @@ const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
   accepted: { label: "Accepted", className: "bg-green-100 text-green-700" },
   rejected: { label: "Not Selected", className: "bg-red-100 text-red-700" },
   revised: { label: "Revised", className: "bg-orange-100 text-orange-700" },
+  needs_confirmation: { label: "Needs Confirmation", className: "bg-amber-100 text-amber-800" },
 };
 
 export function StatusBadge({ status }: { status: string }) {

@@ -49,6 +49,8 @@ function initializeSchema(db: Database.Database) {
       description TEXT,
       status TEXT NOT NULL DEFAULT 'planning' CHECK(status IN ('planning', 'bidding', 'in_progress', 'completed')),
       budget REAL,
+      allow_parallel_bidding INTEGER DEFAULT 0,
+      share_token TEXT,
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now'))
     );
@@ -86,11 +88,13 @@ function initializeSchema(db: Database.Database) {
       description TEXT,
       license_info TEXT,
       insurance_info TEXT,
-      status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'accepted', 'rejected', 'revised')),
+      status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'accepted', 'rejected', 'revised', 'needs_confirmation')),
       is_revision INTEGER DEFAULT 0,
       original_bid_id INTEGER REFERENCES bids(id),
       revision_reason TEXT,
-      created_at TEXT DEFAULT (datetime('now'))
+      delay_confirmed INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
     );
 
     CREATE TABLE IF NOT EXISTS progress_updates (

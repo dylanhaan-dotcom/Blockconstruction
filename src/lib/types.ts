@@ -24,6 +24,8 @@ export interface Project {
   description: string | null;
   status: ProjectStatus;
   budget: number | null;
+  allow_parallel_bidding: number;
+  share_token: string | null;
   created_at: string;
   updated_at: string;
   owner_name?: string;
@@ -58,7 +60,7 @@ export interface Block {
   depends_on_completed?: boolean;
 }
 
-export type BidStatus = "pending" | "accepted" | "rejected" | "revised";
+export type BidStatus = "pending" | "accepted" | "rejected" | "revised" | "needs_confirmation";
 
 export interface Bid {
   id: number;
@@ -74,7 +76,9 @@ export interface Bid {
   is_revision: number;
   original_bid_id: number | null;
   revision_reason: string | null;
+  delay_confirmed: number;
   created_at: string;
+  updated_at: string;
   trade_name?: string;
   trade_type?: string;
   trade_rating?: number;
