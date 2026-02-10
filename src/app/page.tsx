@@ -1,25 +1,26 @@
 "use client";
 
-import React from "react";
+import React, { useEffect } from "react";
 import { useApp } from "@/lib/context";
 import { useRouter } from "next/navigation";
-import { Building2, HardHat, ArrowRight, Blocks, DollarSign, Clock, Heart } from "lucide-react";
+import { Building2, HardHat, ArrowRight, Blocks, DollarSign, Clock, Heart, Loader2 } from "lucide-react";
 
 export default function HomePage() {
-  const { currentUser, setCurrentUser, users } = useApp();
+  const { currentUser, setCurrentUser, users, usersLoading } = useApp();
   const router = useRouter();
 
   const homeowners = users.filter((u) => u.role === "homeowner");
   const trades = users.filter((u) => u.role === "trade");
 
-  if (currentUser) {
-    if (currentUser.role === "homeowner") {
-      router.push("/homeowner");
-    } else {
-      router.push("/trade/dashboard");
+  useEffect(() => {
+    if (currentUser) {
+      if (currentUser.role === "homeowner") {
+        router.push("/homeowner");
+      } else {
+        router.push("/trade/dashboard");
+      }
     }
-    return null;
-  }
+  }, [currentUser, router]);
 
   return (
     <div className="min-h-[calc(100vh-64px)]">
@@ -47,16 +48,25 @@ export default function HomePage() {
               </div>
               <p className="text-sm text-primary-100 mb-4">Create projects, manage blocks, review bids, and reward great work.</p>
               <div className="space-y-2">
-                {homeowners.map((u) => (
-                  <button
-                    key={u.id}
-                    onClick={() => setCurrentUser(u)}
-                    className="w-full flex items-center justify-between px-4 py-2.5 bg-white/10 hover:bg-white/20 rounded-lg transition-colors"
-                  >
-                    <span className="text-sm font-medium">{u.name}</span>
-                    <ArrowRight className="w-4 h-4" />
-                  </button>
-                ))}
+                {usersLoading ? (
+                  <div className="flex items-center justify-center py-4">
+                    <Loader2 className="w-5 h-5 animate-spin text-white/60" />
+                    <span className="text-sm text-white/60 ml-2">Loading users...</span>
+                  </div>
+                ) : homeowners.length === 0 ? (
+                  <p className="text-sm text-white/60 py-2">No homeowner accounts found. Check server connection.</p>
+                ) : (
+                  homeowners.map((u) => (
+                    <button
+                      key={u.id}
+                      onClick={() => setCurrentUser(u)}
+                      className="w-full flex items-center justify-between px-4 py-2.5 bg-white/10 hover:bg-white/20 rounded-lg transition-colors"
+                    >
+                      <span className="text-sm font-medium">{u.name}</span>
+                      <ArrowRight className="w-4 h-4" />
+                    </button>
+                  ))
+                )}
               </div>
             </div>
             <div className="bg-white/10 backdrop-blur rounded-xl p-6 border border-white/20">
@@ -68,19 +78,28 @@ export default function HomePage() {
               </div>
               <p className="text-sm text-primary-100 mb-4">Browse available blocks, submit bids, and track your active projects.</p>
               <div className="space-y-2">
-                {trades.map((u) => (
-                  <button
-                    key={u.id}
-                    onClick={() => setCurrentUser(u)}
-                    className="w-full flex items-center justify-between px-4 py-2.5 bg-white/10 hover:bg-white/20 rounded-lg transition-colors"
-                  >
-                    <div className="text-left">
-                      <span className="text-sm font-medium">{u.name}</span>
-                      <span className="text-xs text-primary-200 ml-2">{u.trade_type}</span>
-                    </div>
-                    <ArrowRight className="w-4 h-4" />
-                  </button>
-                ))}
+                {usersLoading ? (
+                  <div className="flex items-center justify-center py-4">
+                    <Loader2 className="w-5 h-5 animate-spin text-white/60" />
+                    <span className="text-sm text-white/60 ml-2">Loading users...</span>
+                  </div>
+                ) : trades.length === 0 ? (
+                  <p className="text-sm text-white/60 py-2">No trade accounts found. Check server connection.</p>
+                ) : (
+                  trades.map((u) => (
+                    <button
+                      key={u.id}
+                      onClick={() => setCurrentUser(u)}
+                      className="w-full flex items-center justify-between px-4 py-2.5 bg-white/10 hover:bg-white/20 rounded-lg transition-colors"
+                    >
+                      <div className="text-left">
+                        <span className="text-sm font-medium">{u.name}</span>
+                        <span className="text-xs text-primary-200 ml-2">{u.trade_type}</span>
+                      </div>
+                      <ArrowRight className="w-4 h-4" />
+                    </button>
+                  ))
+                )}
               </div>
             </div>
           </div>

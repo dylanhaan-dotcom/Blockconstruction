@@ -7,6 +7,7 @@ interface AppContextType {
   currentUser: User | null;
   setCurrentUser: (user: User | null) => void;
   users: User[];
+  usersLoading: boolean;
   notifications: Notification[];
   unreadCount: number;
   refreshNotifications: () => void;
@@ -18,6 +19,7 @@ const AppContext = createContext<AppContextType>({
   currentUser: null,
   setCurrentUser: () => {},
   users: [],
+  usersLoading: true,
   notifications: [],
   unreadCount: 0,
   refreshNotifications: () => {},
@@ -28,19 +30,44 @@ const AppContext = createContext<AppContextType>({
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [users, setUsers] = useState<User[]>([]);
+  const [usersLoading, setUsersLoading] = useState(true);
   const [notifications, setNotifications] = useState<Notification[]>([]);
 
   useEffect(() => {
-    fetch("/api/users")
-      .then((r) => r.json())
-      .then(setUsers);
+    let retries = 0;
+    const fetchUsers = () => {
+      fetch("/api/users")
+        .then((r) => {
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          return r.json();
+        })
+        .then((data) => {
+          if (Array.isArray(data)) {
+            setUsers(data);
+          }
+          setUsersLoading(false);
+        })
+        .catch(() => {
+          retries++;
+          if (retries < 5) {
+            setTimeout(fetchUsers, retries * 1000);
+          } else {
+            setUsersLoading(false);
+          }
+        });
+    };
+    fetchUsers();
   }, []);
 
   const refreshNotifications = useCallback(() => {
     if (currentUser) {
       fetch(`/api/notifications?user_id=${currentUser.id}`)
-        .then((r) => r.json())
-        .then(setNotifications);
+        .then((r) => {
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          return r.json();
+        })
+        .then(setNotifications)
+        .catch(() => {});
     }
   }, [currentUser]);
 
@@ -53,7 +80,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id }),
-    }).then(refreshNotifications);
+    }).then(refreshNotifications).catch(() => {});
   };
 
   const markAllRead = () => {
@@ -62,7 +89,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ mark_all_read: true, user_id: currentUser.id }),
-      }).then(refreshNotifications);
+      }).then(refreshNotifications).catch(() => {});
     }
   };
 
@@ -74,6 +101,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         currentUser,
         setCurrentUser,
         users,
+        usersLoading,
         notifications,
         unreadCount,
         refreshNotifications,
