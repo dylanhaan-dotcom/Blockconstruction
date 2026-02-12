@@ -34,7 +34,7 @@ export async function PUT(
   if (delay_confirmed !== undefined) {
     db.prepare("UPDATE bids SET delay_confirmed = ?, status = 'pending', updated_at = datetime('now') WHERE id = ?").run(delay_confirmed ? 1 : 0, Number(id));
 
-    // Notify homeowner
+    // Notify project owner
     const block = db.prepare("SELECT b.*, p.title as project_title, p.owner_id FROM blocks b JOIN projects p ON p.id = b.project_id WHERE b.id = ?").get(bid.block_id) as { title: string; project_title: string; project_id: number; owner_id: number };
     const trade = db.prepare("SELECT name FROM users WHERE id = ?").get(bid.trade_id) as { name: string };
 

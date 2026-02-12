@@ -105,7 +105,7 @@ export async function POST(
       );
     }
 
-    // Notify homeowner
+    // Notify project owner
     db.prepare(`
       INSERT INTO notifications (user_id, type, title, message, related_project_id, related_block_id)
       VALUES (?, 'block_delayed', 'Block Delayed',

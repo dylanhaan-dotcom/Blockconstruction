@@ -11,7 +11,7 @@ export function Navigation() {
   const [showNotifications, setShowNotifications] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  const homeowners = users.filter((u) => u.role === "homeowner");
+  const projectOwners = users.filter((u) => u.role === "project_owner");
   const trades = users.filter((u) => u.role === "trade");
 
   return (
@@ -31,12 +31,12 @@ export function Navigation() {
           {/* Desktop Navigation Links */}
           {currentUser && (
             <div className="hidden md:flex items-center gap-6">
-              {currentUser.role === "homeowner" ? (
+              {currentUser.role === "project_owner" ? (
                 <>
-                  <Link href="/homeowner" className="text-sm font-medium text-gray-600 hover:text-gray-900">
+                  <Link href="/owner" className="text-sm font-medium text-gray-600 hover:text-gray-900">
                     Dashboard
                   </Link>
-                  <Link href="/homeowner/projects/new" className="text-sm font-medium text-gray-600 hover:text-gray-900">
+                  <Link href="/owner/projects/new" className="text-sm font-medium text-gray-600 hover:text-gray-900">
                     New Project
                   </Link>
                 </>
@@ -111,7 +111,7 @@ export function Navigation() {
               >
                 {currentUser ? (
                   <>
-                    <div className={`w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold ${currentUser.role === "homeowner" ? "bg-primary-500" : "bg-accent-500"}`}>
+                    <div className={`w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold ${currentUser.role === "project_owner" ? "bg-primary-500" : "bg-accent-500"}`}>
                       {currentUser.name.charAt(0)}
                     </div>
                     <span className="hidden sm:block font-medium text-gray-700">{currentUser.name}</span>
@@ -124,8 +124,8 @@ export function Navigation() {
               {showUserMenu && (
                 <div className="absolute right-0 mt-2 w-64 bg-white rounded-xl shadow-lg border border-gray-200 z-50">
                   <div className="p-2">
-                    <p className="px-3 py-1 text-xs font-semibold text-gray-400 uppercase tracking-wider">Homeowners</p>
-                    {homeowners.map((u) => (
+                    <p className="px-3 py-1 text-xs font-semibold text-gray-400 uppercase tracking-wider">Project Owners</p>
+                    {projectOwners.map((u) => (
                       <button
                         key={u.id}
                         onClick={() => { setCurrentUser(u); setShowUserMenu(false); }}
@@ -176,12 +176,12 @@ export function Navigation() {
         {/* Mobile menu */}
         {mobileMenuOpen && currentUser && (
           <div className="md:hidden border-t border-gray-100 py-2 pb-3">
-            {currentUser.role === "homeowner" ? (
+            {currentUser.role === "project_owner" ? (
               <>
-                <Link href="/homeowner" onClick={() => setMobileMenuOpen(false)} className="block px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 rounded-lg">
+                <Link href="/owner" onClick={() => setMobileMenuOpen(false)} className="block px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 rounded-lg">
                   Dashboard
                 </Link>
-                <Link href="/homeowner/projects/new" onClick={() => setMobileMenuOpen(false)} className="block px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 rounded-lg">
+                <Link href="/owner/projects/new" onClick={() => setMobileMenuOpen(false)} className="block px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 rounded-lg">
                   New Project
                 </Link>
               </>

@@ -8,7 +8,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { Project, Appreciation } from "@/lib/types";
 import { Plus, FolderOpen, DollarSign, CheckCircle2, Clock, Heart } from "lucide-react";
 
-export default function HomeownerDashboard() {
+export default function OwnerDashboard() {
   const { currentUser } = useApp();
   const router = useRouter();
   const [projects, setProjects] = useState<Project[]>([]);
@@ -16,7 +16,7 @@ export default function HomeownerDashboard() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!currentUser || currentUser.role !== "homeowner") {
+    if (!currentUser || currentUser.role !== "project_owner") {
       router.push("/");
       return;
     }
@@ -47,7 +47,7 @@ export default function HomeownerDashboard() {
           <h1 className="text-2xl font-bold text-gray-900">Welcome, {currentUser.name}</h1>
           <p className="text-gray-500 text-sm mt-1">Manage your construction projects</p>
         </div>
-        <Link href="/homeowner/projects/new" className="btn-primary flex items-center gap-2 w-fit">
+        <Link href="/owner/projects/new" className="btn-primary flex items-center gap-2 w-fit">
           <Plus className="w-4 h-4" />
           New Project
         </Link>
@@ -108,7 +108,7 @@ export default function HomeownerDashboard() {
         <div className="card text-center py-12">
           <FolderOpen className="w-12 h-12 text-gray-300 mx-auto mb-4" />
           <p className="text-gray-500 mb-4">No projects yet. Create your first project to get started.</p>
-          <Link href="/homeowner/projects/new" className="btn-primary">
+          <Link href="/owner/projects/new" className="btn-primary">
             Create Project
           </Link>
         </div>
@@ -117,7 +117,7 @@ export default function HomeownerDashboard() {
           {projects.map((project) => (
             <Link
               key={project.id}
-              href={`/homeowner/projects/${project.id}`}
+              href={`/owner/projects/${project.id}`}
               className="card hover:shadow-md transition-shadow group"
             >
               <div className="flex items-start justify-between mb-3">

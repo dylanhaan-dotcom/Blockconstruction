@@ -31,7 +31,7 @@ function initializeSchema(db: Database.Database) {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
       email TEXT NOT NULL,
-      role TEXT NOT NULL CHECK(role IN ('homeowner', 'trade')),
+      role TEXT NOT NULL CHECK(role IN ('project_owner', 'trade')),
       trade_type TEXT,
       license_info TEXT,
       insurance_info TEXT,

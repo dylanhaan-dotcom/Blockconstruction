@@ -47,7 +47,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   }, [id, currentUser?.id]);
 
   useEffect(() => {
-    if (!currentUser || currentUser.role !== "homeowner") {
+    if (!currentUser || currentUser.role !== "project_owner") {
       router.push("/");
       return;
     }
@@ -192,7 +192,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
-      <Link href="/homeowner" className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 mb-4">
+      <Link href="/owner" className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 mb-4">
         <ArrowLeft className="w-4 h-4" />
         Back to Dashboard
       </Link>

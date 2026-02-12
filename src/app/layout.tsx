@@ -5,7 +5,7 @@ import { Navigation } from "@/components/Navigation";
 
 export const metadata: Metadata = {
   title: "BlockConstruction - Modular Project Management",
-  description: "Connect homeowners with trades through modularized work blocks",
+  description: "Connect project owners with trades through modularized work blocks",
 };
 
 export default function RootLayout({

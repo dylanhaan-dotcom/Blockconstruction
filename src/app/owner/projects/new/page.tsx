@@ -30,7 +30,7 @@ export default function NewProjectPage() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    if (!currentUser || currentUser.role !== "homeowner") {
+    if (!currentUser || currentUser.role !== "project_owner") {
       router.push("/");
       return;
     }
@@ -121,7 +121,7 @@ export default function NewProjectPage() {
       blockIds.push(created.id);
     }
 
-    router.push(`/homeowner/projects/${project.id}`);
+    router.push(`/owner/projects/${project.id}`);
   };
 
   if (!currentUser) return null;
@@ -130,7 +130,7 @@ export default function NewProjectPage() {
 
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 py-6">
-      <Link href="/homeowner" className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 mb-4">
+      <Link href="/owner" className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 mb-4">
         <ArrowLeft className="w-4 h-4" />
         Back to Dashboard
       </Link>
@@ -318,7 +318,7 @@ export default function NewProjectPage() {
           >
             {saving ? "Creating..." : "Create Project"}
           </button>
-          <Link href="/homeowner" className="btn-secondary">Cancel</Link>
+          <Link href="/owner" className="btn-secondary">Cancel</Link>
         </div>
       </form>
     </div>

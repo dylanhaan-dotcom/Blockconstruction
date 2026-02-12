@@ -22,9 +22,9 @@ export function seedDatabase() {
     `INSERT INTO users (name, email, role, trade_type, license_info, insurance_info, rating, rating_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
   );
 
-  // Homeowners
-  insertUser.run("Sarah Mitchell", "sarah@example.com", "homeowner", null, null, null, 0, 0);
-  insertUser.run("David Chen", "david@example.com", "homeowner", null, null, null, 0, 0);
+  // Project Owners
+  insertUser.run("Sarah Mitchell", "sarah@example.com", "project_owner", null, null, null, 0, 0);
+  insertUser.run("David Chen", "david@example.com", "project_owner", null, null, null, 0, 0);
 
   // Trades
   insertUser.run("Mike's Electric", "mike@electric.com", "trade", "Electrician", "EL-2024-4821", "State Farm #EL-991234", 4.8, 23);
@@ -71,7 +71,7 @@ export function seedDatabase() {
   insertBlock.run(5, 1, "Countertop Fabrication & Install", "Template, fabricate, and install quartz countertops. Include undermount sink cutout. Edge profile: eased edge.", "Carpenter", "awarded", "2026-02-24", "2026-02-26", null, "Material: Caesarstone Calacatta Nuvo. Template after cabinets are complete.", 5);
 
   // Block 6: Electrical Finish (open_for_bids - depends on cabinets)
-  insertBlock.run(6, 1, "Electrical Finish Work", "Install outlets, switches, and under-cabinet LED lighting. Connect dishwasher and range circuits. Install pendant lights over island.", "Electrician", "open_for_bids", "2026-02-28", null, null, "Use Decora-style outlets and switches in white. Pendant light fixtures provided by homeowner.", 6);
+  insertBlock.run(6, 1, "Electrical Finish Work", "Install outlets, switches, and under-cabinet LED lighting. Connect dishwasher and range circuits. Install pendant lights over island.", "Electrician", "open_for_bids", "2026-02-28", null, null, "Use Decora-style outlets and switches in white. Pendant light fixtures provided by project owner.", 6);
 
   // Block 7: Plumbing Finish (open_for_bids - depends on countertops)
   insertBlock.run(7, 1, "Plumbing Fixture Installation", "Install undermount sink, faucet, garbage disposal, and dishwasher connections. Test all for leaks.", "Plumber", "open_for_bids", "2026-03-03", null, null, "Sink: Kraus KHU100-30. Faucet: Delta Trinsic. Disposal: InSinkErator Evolution.", 7);
@@ -83,7 +83,7 @@ export function seedDatabase() {
   insertBlock.run(9, 1, "Kitchen Painting", "Paint walls, ceiling, and trim. Two coats on walls, one on ceiling. Touch up any cabinet paint if needed.", "Painter", "pending", "2026-03-12", null, null, "Wall color: Benjamin Moore Simply White OC-117. Ceiling: flat white. Trim: semi-gloss white.", 9);
 
   // Block 10: Final Inspection & Punch List (pending - depends on everything)
-  insertBlock.run(10, 1, "Final Inspection & Punch List", "Walk-through with homeowner. Address any punch list items. Final cleaning. Arrange city final inspection for electrical and plumbing permits.", "Carpenter", "pending", "2026-03-17", null, null, "Compile all warranty documents and manuals for homeowner.", 10);
+  insertBlock.run(10, 1, "Final Inspection & Punch List", "Walk-through with project owner. Address any punch list items. Final cleaning. Arrange city final inspection for electrical and plumbing permits.", "Carpenter", "pending", "2026-03-17", null, null, "Compile all warranty documents and manuals for project owner.", 10);
 
   // Block dependencies
   const insertDep = db.prepare(
@@ -188,7 +188,7 @@ export function seedDatabase() {
   insertBlock.run(12, 2, "Bathroom Plumbing Rough-In", "Run drain, supply, and vent lines for toilet, shower, and vanity.", "Plumber", "pending", "2026-03-25", null, null, "Requires permit. Must tie into existing main stack.", 2);
   insertBlock.run(13, 2, "Bathroom Electrical", "Run circuits for lights, fan, GFCI outlets, and heated floor.", "Electrician", "pending", "2026-03-25", null, null, "All outlets must be GFCI protected.", 3);
   insertBlock.run(14, 2, "Tile & Shower Installation", "Install shower pan, tile shower walls and floor, install vanity tile.", "Tile Installer", "pending", "2026-04-10", null, null, "Waterproofing membrane required (Kerdi or equivalent).", 4);
-  insertBlock.run(15, 2, "Bathroom Fixtures & Finish", "Install toilet, vanity, mirror, fixtures, and accessories.", "Plumber", "pending", "2026-04-17", null, null, "Fixtures TBD by homeowner.", 5);
+  insertBlock.run(15, 2, "Bathroom Fixtures & Finish", "Install toilet, vanity, mirror, fixtures, and accessories.", "Plumber", "pending", "2026-04-17", null, null, "Fixtures TBD by project owner.", 5);
 
   // Dependencies for bathroom project
   insertDep.run(12, 11);

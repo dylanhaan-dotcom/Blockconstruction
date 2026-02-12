@@ -418,7 +418,7 @@ export default function TradeBlockDetailPage({ params }: { params: Promise<{ id:
               <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg">
                 <p className="text-sm text-amber-800 flex items-center gap-1.5">
                   <AlertTriangle className="w-4 h-4" />
-                  Marking as delayed will automatically notify downstream trades and the homeowner.
+                  Marking as delayed will automatically notify downstream trades and the project owner.
                 </p>
               </div>
             )}

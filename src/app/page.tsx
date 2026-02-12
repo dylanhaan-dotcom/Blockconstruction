@@ -9,13 +9,13 @@ export default function HomePage() {
   const { currentUser, setCurrentUser, users, usersLoading } = useApp();
   const router = useRouter();
 
-  const homeowners = users.filter((u) => u.role === "homeowner");
+  const projectOwners = users.filter((u) => u.role === "project_owner");
   const trades = users.filter((u) => u.role === "trade");
 
   useEffect(() => {
     if (currentUser) {
-      if (currentUser.role === "homeowner") {
-        router.push("/homeowner");
+      if (currentUser.role === "project_owner") {
+        router.push("/owner");
       } else {
         router.push("/trade/dashboard");
       }
@@ -44,7 +44,7 @@ export default function HomePage() {
                 <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center">
                   <Building2 className="w-5 h-5" />
                 </div>
-                <h2 className="text-lg font-semibold">I&apos;m a Homeowner</h2>
+                <h2 className="text-lg font-semibold">I&apos;m a Project Owner</h2>
               </div>
               <p className="text-sm text-primary-100 mb-4">Create projects, manage blocks, review bids, and reward great work.</p>
               <div className="space-y-2">
@@ -53,10 +53,10 @@ export default function HomePage() {
                     <Loader2 className="w-5 h-5 animate-spin text-white/60" />
                     <span className="text-sm text-white/60 ml-2">Loading users...</span>
                   </div>
-                ) : homeowners.length === 0 ? (
-                  <p className="text-sm text-white/60 py-2">No homeowner accounts found. Check server connection.</p>
+                ) : projectOwners.length === 0 ? (
+                  <p className="text-sm text-white/60 py-2">No project owner accounts found. Check server connection.</p>
                 ) : (
-                  homeowners.map((u) => (
+                  projectOwners.map((u) => (
                     <button
                       key={u.id}
                       onClick={() => setCurrentUser(u)}
@@ -122,7 +122,7 @@ export default function HomePage() {
               <DollarSign className="w-6 h-6 text-accent-600" />
             </div>
             <h3 className="font-semibold mb-2">Competitive Bidding</h3>
-            <p className="text-sm text-gray-600">Trades bid on individual blocks. Homeowners compare and select the best fit.</p>
+            <p className="text-sm text-gray-600">Trades bid on individual blocks. Project owners compare and select the best fit.</p>
           </div>
           <div className="text-center">
             <div className="w-12 h-12 bg-yellow-100 rounded-xl flex items-center justify-center mx-auto mb-4">
