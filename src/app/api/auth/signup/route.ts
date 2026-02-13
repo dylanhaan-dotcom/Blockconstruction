@@ -4,6 +4,10 @@ import { queryOne, execute } from "@/lib/db";
 
 export async function POST(request: NextRequest) {
   try {
+    if (!process.env.TURSO_DATABASE_URL) {
+      return NextResponse.json({ error: "Database not configured. Set TURSO_DATABASE_URL in Vercel environment variables." }, { status: 500 });
+    }
+
     const body = await request.json();
     const { name, email, password, role, trade_type } = body;
 
@@ -34,6 +38,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ id: Number(result.lastInsertRowid), name, email, role }, { status: 201 });
   } catch (err) {
     console.error("Signup error:", err);
-    return NextResponse.json({ error: "Server error. Please try again." }, { status: 500 });
+    const message = err instanceof Error ? err.message : "Unknown error";
+    return NextResponse.json({ error: `Server error: ${message}` }, { status: 500 });
   }
 }
