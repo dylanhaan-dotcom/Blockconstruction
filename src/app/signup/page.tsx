@@ -50,40 +50,45 @@ export default function SignupPage() {
 
     setLoading(true);
 
-    const res = await fetch("/api/auth/signup", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name,
+    try {
+      const res = await fetch("/api/auth/signup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name,
+          email,
+          password,
+          role,
+          trade_type: role === "trade" ? tradeType : null,
+        }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setError(data.error || "Something went wrong");
+        setLoading(false);
+        return;
+      }
+
+      // Auto sign in after signup
+      const result = await signIn("credentials", {
         email,
         password,
-        role,
-        trade_type: role === "trade" ? tradeType : null,
-      }),
-    });
+        redirect: false,
+      });
 
-    if (!res.ok) {
-      const data = await res.json();
-      setError(data.error || "Something went wrong");
+      if (result?.error) {
+        setError("Account created but sign-in failed. Please go to login.");
+        setLoading(false);
+        return;
+      }
+
+      router.push("/");
+      router.refresh();
+    } catch (err) {
+      setError("Network error. Please try again.");
       setLoading(false);
-      return;
     }
-
-    // Auto sign in after signup
-    const result = await signIn("credentials", {
-      email,
-      password,
-      redirect: false,
-    });
-
-    if (result?.error) {
-      setError("Account created but sign-in failed. Please go to login.");
-      setLoading(false);
-      return;
-    }
-
-    router.push("/");
-    router.refresh();
   }
 
   return (
