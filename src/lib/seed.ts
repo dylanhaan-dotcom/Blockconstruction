@@ -1,4 +1,5 @@
 import { Client } from "@libsql/client";
+import bcrypt from "bcryptjs";
 
 function generateRedeemCode(): string {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -13,17 +14,20 @@ export async function seedDatabase(db: Client) {
   const result = await db.execute("SELECT COUNT(*) as count FROM users");
   if (Number(result.rows[0][0]) > 0) return;
 
-  const u = "INSERT INTO users (name, email, role, trade_type, license_info, insurance_info, rating, rating_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+  // Hash a default password for demo accounts
+  const hash = await bcrypt.hash("password123", 10);
+
+  const u = "INSERT INTO users (name, email, password_hash, role, trade_type, license_info, insurance_info, rating, rating_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
   await db.batch(
     [
-      { sql: u, args: ["Sarah Mitchell", "sarah@example.com", "project_owner", null, null, null, 0, 0] },
-      { sql: u, args: ["David Chen", "david@example.com", "project_owner", null, null, null, 0, 0] },
-      { sql: u, args: ["Mike's Electric", "mike@electric.com", "trade", "Electrician", "EL-2024-4821", "State Farm #EL-991234", 4.8, 23] },
-      { sql: u, args: ["Rivera Plumbing", "rivera@plumbing.com", "trade", "Plumber", "PL-2024-1192", "Allstate #PL-445566", 4.5, 17] },
-      { sql: u, args: ["Oakwood Carpentry", "oak@carpentry.com", "trade", "Carpenter", "CA-2024-7733", "Liberty Mutual #CA-223344", 4.9, 31] },
-      { sql: u, args: ["ProTile Solutions", "info@protile.com", "trade", "Tile Installer", "TI-2024-5544", "GEICO #TI-112233", 4.2, 12] },
-      { sql: u, args: ["Summit Painting Co", "hello@summit.com", "trade", "Painter", "PA-2024-8899", "Progressive #PA-667788", 4.6, 19] },
+      { sql: u, args: ["Sarah Mitchell", "sarah@example.com", hash, "project_owner", null, null, null, 0, 0] },
+      { sql: u, args: ["David Chen", "david@example.com", hash, "project_owner", null, null, null, 0, 0] },
+      { sql: u, args: ["Mike's Electric", "mike@electric.com", hash, "trade", "Electrician", "EL-2024-4821", "State Farm #EL-991234", 4.8, 23] },
+      { sql: u, args: ["Rivera Plumbing", "rivera@plumbing.com", hash, "trade", "Plumber", "PL-2024-1192", "Allstate #PL-445566", 4.5, 17] },
+      { sql: u, args: ["Oakwood Carpentry", "oak@carpentry.com", hash, "trade", "Carpenter", "CA-2024-7733", "Liberty Mutual #CA-223344", 4.9, 31] },
+      { sql: u, args: ["ProTile Solutions", "info@protile.com", hash, "trade", "Tile Installer", "TI-2024-5544", "GEICO #TI-112233", 4.2, 12] },
+      { sql: u, args: ["Summit Painting Co", "hello@summit.com", hash, "trade", "Painter", "PA-2024-8899", "Progressive #PA-667788", 4.6, 19] },
     ],
     "write"
   );

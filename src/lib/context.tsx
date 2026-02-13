@@ -1,13 +1,24 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
-import { User, Notification } from "./types";
+import { SessionProvider, useSession } from "next-auth/react";
+import { Notification } from "./types";
+
+interface AppUser {
+  id: number;
+  name: string;
+  email: string;
+  role: string;
+  trade_type: string | null;
+  license_info: string | null;
+  insurance_info: string | null;
+  rating: number;
+  rating_count: number;
+}
 
 interface AppContextType {
-  currentUser: User | null;
-  setCurrentUser: (user: User | null) => void;
-  users: User[];
-  usersLoading: boolean;
+  currentUser: AppUser | null;
+  loading: boolean;
   notifications: Notification[];
   unreadCount: number;
   refreshNotifications: () => void;
@@ -17,9 +28,7 @@ interface AppContextType {
 
 const AppContext = createContext<AppContextType>({
   currentUser: null,
-  setCurrentUser: () => {},
-  users: [],
-  usersLoading: true,
+  loading: true,
   notifications: [],
   unreadCount: 0,
   refreshNotifications: () => {},
@@ -27,37 +36,23 @@ const AppContext = createContext<AppContextType>({
   markAllRead: () => {},
 });
 
-export function AppProvider({ children }: { children: React.ReactNode }) {
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [users, setUsers] = useState<User[]>([]);
-  const [usersLoading, setUsersLoading] = useState(true);
+function AppContextProvider({ children }: { children: React.ReactNode }) {
+  const { data: session, status } = useSession();
   const [notifications, setNotifications] = useState<Notification[]>([]);
 
-  useEffect(() => {
-    let retries = 0;
-    const fetchUsers = () => {
-      fetch("/api/users")
-        .then((r) => {
-          if (!r.ok) throw new Error(`HTTP ${r.status}`);
-          return r.json();
-        })
-        .then((data) => {
-          if (Array.isArray(data)) {
-            setUsers(data);
-          }
-          setUsersLoading(false);
-        })
-        .catch(() => {
-          retries++;
-          if (retries < 5) {
-            setTimeout(fetchUsers, retries * 1000);
-          } else {
-            setUsersLoading(false);
-          }
-        });
-    };
-    fetchUsers();
-  }, []);
+  const currentUser: AppUser | null = session?.user
+    ? {
+        id: Number((session.user as Record<string, unknown>).id),
+        name: session.user.name || "",
+        email: session.user.email || "",
+        role: (session.user as Record<string, unknown>).role as string,
+        trade_type: (session.user as Record<string, unknown>).trade_type as string | null,
+        license_info: ((session.user as Record<string, unknown>).license_info as string | null) || null,
+        insurance_info: ((session.user as Record<string, unknown>).insurance_info as string | null) || null,
+        rating: Number((session.user as Record<string, unknown>).rating) || 0,
+        rating_count: Number((session.user as Record<string, unknown>).rating_count) || 0,
+      }
+    : null;
 
   const refreshNotifications = useCallback(() => {
     if (currentUser) {
@@ -69,7 +64,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         .then(setNotifications)
         .catch(() => {});
     }
-  }, [currentUser]);
+  }, [currentUser?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     refreshNotifications();
@@ -99,9 +94,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     <AppContext.Provider
       value={{
         currentUser,
-        setCurrentUser,
-        users,
-        usersLoading,
+        loading: status === "loading",
         notifications,
         unreadCount,
         refreshNotifications,
@@ -111,6 +104,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     >
       {children}
     </AppContext.Provider>
+  );
+}
+
+export function AppProvider({ children }: { children: React.ReactNode }) {
+  return (
+    <SessionProvider>
+      <AppContextProvider>{children}</AppContextProvider>
+    </SessionProvider>
   );
 }
 

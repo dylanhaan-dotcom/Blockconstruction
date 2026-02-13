@@ -9,13 +9,14 @@ import { Bid, Appreciation } from "@/lib/types";
 import { Briefcase, DollarSign, Heart, Star, Coffee, UtensilsCrossed, Search, Calendar } from "lucide-react";
 
 export default function TradeDashboard() {
-  const { currentUser } = useApp();
+  const { currentUser, loading: sessionLoading } = useApp();
   const router = useRouter();
   const [bids, setBids] = useState<(Bid & { block_title?: string; project_title?: string })[]>([]);
   const [appreciations, setAppreciations] = useState<Appreciation[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (sessionLoading) return;
     if (!currentUser || currentUser.role !== "trade") {
       router.push("/");
       return;
@@ -28,9 +29,9 @@ export default function TradeDashboard() {
       setAppreciations(a);
       setLoading(false);
     });
-  }, [currentUser, router]);
+  }, [currentUser, sessionLoading, router]);
 
-  if (!currentUser || loading) {
+  if (sessionLoading || !currentUser || loading) {
     return <div className="flex items-center justify-center h-64"><p className="text-gray-500">Loading...</p></div>;
   }
 

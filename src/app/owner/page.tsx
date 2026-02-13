@@ -9,13 +9,14 @@ import { Project, Appreciation } from "@/lib/types";
 import { Plus, FolderOpen, DollarSign, CheckCircle2, Clock, Heart } from "lucide-react";
 
 export default function OwnerDashboard() {
-  const { currentUser } = useApp();
+  const { currentUser, loading: sessionLoading } = useApp();
   const router = useRouter();
   const [projects, setProjects] = useState<Project[]>([]);
   const [appreciations, setAppreciations] = useState<Appreciation[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (sessionLoading) return;
     if (!currentUser || currentUser.role !== "project_owner") {
       router.push("/");
       return;
@@ -28,9 +29,9 @@ export default function OwnerDashboard() {
       setAppreciations(a);
       setLoading(false);
     });
-  }, [currentUser, router]);
+  }, [currentUser, sessionLoading, router]);
 
-  if (!currentUser || loading) {
+  if (sessionLoading || !currentUser || loading) {
     return <div className="flex items-center justify-center h-64"><p className="text-gray-500">Loading...</p></div>;
   }
 

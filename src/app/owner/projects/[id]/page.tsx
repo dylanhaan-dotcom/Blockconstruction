@@ -17,7 +17,7 @@ type TabView = "timeline" | "gantt" | "blocks";
 
 export default function ProjectDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const { currentUser, refreshNotifications } = useApp();
+  const { currentUser, loading: sessionLoading, refreshNotifications } = useApp();
   const router = useRouter();
   const [project, setProject] = useState<Project | null>(null);
   const [blocks, setBlocks] = useState<Block[]>([]);
@@ -47,12 +47,13 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   }, [id, currentUser?.id]);
 
   useEffect(() => {
+    if (sessionLoading) return;
     if (!currentUser || currentUser.role !== "project_owner") {
       router.push("/");
       return;
     }
     fetchData();
-  }, [currentUser, router, fetchData]);
+  }, [currentUser, sessionLoading, router, fetchData]);
 
   const fetchBlockDetail = async (blockId: number) => {
     const res = await fetch(`/api/blocks/${blockId}`);

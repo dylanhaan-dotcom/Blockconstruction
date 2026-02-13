@@ -9,7 +9,7 @@ import { Block } from "@/lib/types";
 import { Search, Filter, MapPin, Calendar, Users } from "lucide-react";
 
 export default function BrowseBlocksPage() {
-  const { currentUser } = useApp();
+  const { currentUser, loading: sessionLoading } = useApp();
   const router = useRouter();
   const [blocks, setBlocks] = useState<Block[]>([]);
   const [loading, setLoading] = useState(true);
@@ -17,6 +17,7 @@ export default function BrowseBlocksPage() {
   const [showAll, setShowAll] = useState(false);
 
   useEffect(() => {
+    if (sessionLoading) return;
     if (!currentUser || currentUser.role !== "trade") {
       router.push("/");
       return;

@@ -37,7 +37,7 @@ interface BlockDetail {
 
 export default function TradeBlockDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const { currentUser, refreshNotifications } = useApp();
+  const { currentUser, loading: sessionLoading, refreshNotifications } = useApp();
   const router = useRouter();
   const [block, setBlock] = useState<BlockDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -75,6 +75,7 @@ export default function TradeBlockDetailPage({ params }: { params: Promise<{ id:
   }, [id]);
 
   useEffect(() => {
+    if (sessionLoading) return;
     if (!currentUser || currentUser.role !== "trade") {
       router.push("/");
       return;

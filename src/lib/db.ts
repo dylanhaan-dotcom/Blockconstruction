@@ -19,7 +19,8 @@ async function initializeSchema(db: Client) {
       `CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
-        email TEXT NOT NULL,
+        email TEXT NOT NULL UNIQUE,
+        password_hash TEXT,
         role TEXT NOT NULL CHECK(role IN ('project_owner', 'trade')),
         trade_type TEXT,
         license_info TEXT,

@@ -17,7 +17,7 @@ interface BlockForm {
 }
 
 export default function NewProjectPage() {
-  const { currentUser } = useApp();
+  const { currentUser, loading: sessionLoading } = useApp();
   const router = useRouter();
   const [templates, setTemplates] = useState<ProjectTemplate[]>([]);
   const [title, setTitle] = useState("");
@@ -30,12 +30,13 @@ export default function NewProjectPage() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
+    if (sessionLoading) return;
     if (!currentUser || currentUser.role !== "project_owner") {
       router.push("/");
       return;
     }
     fetch("/api/templates").then((r) => r.json()).then(setTemplates);
-  }, [currentUser, router]);
+  }, [currentUser, sessionLoading, router]);
 
   const applyTemplate = (template: ProjectTemplate) => {
     setProjectType(template.project_type);

@@ -20,13 +20,14 @@ interface ScheduleBlock extends Block {
 }
 
 export default function TradeSchedulePage() {
-  const { currentUser } = useApp();
+  const { currentUser, loading: sessionLoading } = useApp();
   const router = useRouter();
   const [blocks, setBlocks] = useState<ScheduleBlock[]>([]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<ScheduleView>("gantt");
 
   useEffect(() => {
+    if (sessionLoading) return;
     if (!currentUser || currentUser.role !== "trade") {
       router.push("/");
       return;
