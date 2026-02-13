@@ -1,15 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getDb } from "@/lib/db";
+import { query, queryOne, execute } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
-  const db = getDb();
   const blockId = request.nextUrl.searchParams.get("block_id");
   const tradeId = request.nextUrl.searchParams.get("trade_id");
   const status = request.nextUrl.searchParams.get("status");
 
-  let query = `
+  let sql = `
     SELECT bi.*, u.name as trade_name, u.trade_type, u.rating as trade_rating, u.rating_count as trade_rating_count,
       b.title as block_title, p.title as project_title
     FROM bids bi
@@ -35,28 +34,27 @@ export async function GET(request: NextRequest) {
   }
 
   if (conditions.length > 0) {
-    query += " WHERE " + conditions.join(" AND ");
+    sql += " WHERE " + conditions.join(" AND ");
   }
 
-  query += " ORDER BY bi.created_at DESC";
+  sql += " ORDER BY bi.created_at DESC";
 
-  const bids = db.prepare(query).all(...params);
+  const bids = await query(sql, params);
   return NextResponse.json(bids);
 }
 
 export async function POST(request: NextRequest) {
-  const db = getDb();
   const body = await request.json();
   const { block_id, trade_id, price, start_date, duration_days, description, license_info, insurance_info, is_revision, original_bid_id, revision_reason } = body;
 
-  const result = db.prepare(`
+  const result = await execute(`
     INSERT INTO bids (block_id, trade_id, price, start_date, duration_days, description, license_info, insurance_info, is_revision, original_bid_id, revision_reason)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
+  `, [
     block_id, trade_id, price, start_date, duration_days, description,
     license_info, insurance_info, is_revision || 0, original_bid_id || null, revision_reason || null
-  );
+  ]);
 
-  const bid = db.prepare("SELECT * FROM bids WHERE id = ?").get(result.lastInsertRowid);
+  const bid = await queryOne("SELECT * FROM bids WHERE id = ?", [result.lastInsertRowid!]);
   return NextResponse.json(bid, { status: 201 });
 }

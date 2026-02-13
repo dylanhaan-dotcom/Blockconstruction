@@ -155,20 +155,23 @@ function rowsToObjects(
   });
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Row = Record<string, any>;
+
 // Query helpers that return plain objects (safe for JSON serialization)
 export async function query(
   sql: string,
   args: InValue[] = []
-): Promise<Record<string, unknown>[]> {
+): Promise<Row[]> {
   const db = await ensureDb();
   const result = await db.execute({ sql, args });
-  return rowsToObjects(result.columns, result.rows as Array<Array<InValue>>);
+  return rowsToObjects(result.columns, result.rows as unknown as Array<Array<InValue>>);
 }
 
 export async function queryOne(
   sql: string,
   args: InValue[] = []
-): Promise<Record<string, unknown> | undefined> {
+): Promise<Row | undefined> {
   const rows = await query(sql, args);
   return rows[0];
 }

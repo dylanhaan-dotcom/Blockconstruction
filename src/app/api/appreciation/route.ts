@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getDb } from "@/lib/db";
+import { query, queryOne, execute } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -21,11 +21,10 @@ const PARTNER_RESTAURANTS = [
 ];
 
 export async function GET(request: NextRequest) {
-  const db = getDb();
   const fromUserId = request.nextUrl.searchParams.get("from_user_id");
   const toUserId = request.nextUrl.searchParams.get("to_user_id");
 
-  let query = `
+  let sql = `
     SELECT a.*,
       fu.name as from_name,
       tu.name as to_name,
@@ -51,42 +50,40 @@ export async function GET(request: NextRequest) {
   }
 
   if (conditions.length > 0) {
-    query += " WHERE " + conditions.join(" AND ");
+    sql += " WHERE " + conditions.join(" AND ");
   }
 
-  query += " ORDER BY a.created_at DESC";
+  sql += " ORDER BY a.created_at DESC";
 
-  const appreciations = db.prepare(query).all(...params);
+  const appreciations = await query(sql, params);
   return NextResponse.json(appreciations);
 }
 
 export async function POST(request: NextRequest) {
-  const db = getDb();
   const body = await request.json();
   const { from_user_id, to_user_id, project_id, block_id, type, amount, message } = body;
 
   const redeemCode = generateRedeemCode();
 
-  const result = db.prepare(`
+  const result = await execute(`
     INSERT INTO appreciations (from_user_id, to_user_id, project_id, block_id, type, amount, message, redeem_code)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(from_user_id, to_user_id, project_id || null, block_id || null, type, amount, message || null, redeemCode);
+  `, [from_user_id, to_user_id, project_id || null, block_id || null, type, amount, message || null, redeemCode]);
 
-  // Notify the trade
-  const fromUser = db.prepare("SELECT name FROM users WHERE id = ?").get(from_user_id) as { name: string };
+  const fromUser = await queryOne("SELECT name FROM users WHERE id = ?", [from_user_id]) as { name: string };
 
   const typeLabel = type === "coffee" ? "Coffee ($20)" : type === "lunch" ? "Lunch ($40)" : type === "dinner" ? "Dinner ($75)" : `$${amount} reward`;
 
-  db.prepare(`
+  await execute(`
     INSERT INTO notifications (user_id, type, title, message, related_project_id, related_block_id)
     VALUES (?, 'appreciation', 'You received a reward!', ?, ?, ?)
-  `).run(
+  `, [
     to_user_id,
     `${fromUser.name} sent you a ${typeLabel}!${message ? ` "${message}"` : ""} Use code ${redeemCode} at any partner restaurant.`,
     project_id || null,
     block_id || null
-  );
+  ]);
 
-  const appreciation = db.prepare("SELECT * FROM appreciations WHERE id = ?").get(result.lastInsertRowid) as Record<string, unknown>;
+  const appreciation = await queryOne("SELECT * FROM appreciations WHERE id = ?", [result.lastInsertRowid!]);
   return NextResponse.json({ ...appreciation, partner_restaurants: PARTNER_RESTAURANTS }, { status: 201 });
 }

@@ -1,17 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getDb } from "@/lib/db";
+import { query, queryOne, execute } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
-  const db = getDb();
-
   const projectId = request.nextUrl.searchParams.get("project_id");
   const status = request.nextUrl.searchParams.get("status");
   const tradeType = request.nextUrl.searchParams.get("trade_type");
   const available = request.nextUrl.searchParams.get("available");
 
-  let query = `
+  let sql = `
     SELECT b.*,
       p.title as project_title,
       p.address as project_address,
@@ -30,51 +28,48 @@ export async function GET(request: NextRequest) {
     conditions.push("b.project_id = ?");
     params.push(Number(projectId));
   }
-
   if (status) {
     conditions.push("b.status = ?");
     params.push(status);
   }
-
   if (tradeType) {
     conditions.push("b.trade_type = ?");
     params.push(tradeType);
   }
-
   if (available === "true") {
     conditions.push("b.status = 'open_for_bids'");
   }
 
   if (conditions.length > 0) {
-    query += " WHERE " + conditions.join(" AND ");
+    sql += " WHERE " + conditions.join(" AND ");
   }
 
-  query += " GROUP BY b.id ORDER BY b.sort_order ASC, b.id ASC";
+  sql += " GROUP BY b.id ORDER BY b.sort_order ASC, b.id ASC";
 
-  const blocks = db.prepare(query).all(...params) as Record<string, unknown>[];
-
-  // Attach dependencies for each block
-  const depStmt = db.prepare(
-    "SELECT depends_on_block_id FROM block_dependencies WHERE block_id = ?"
-  );
-  const depNameStmt = db.prepare(
-    "SELECT b.title FROM block_dependencies bd JOIN blocks b ON b.id = bd.depends_on_block_id WHERE bd.block_id = ?"
-  );
+  const blocks = await query(sql, params);
 
   for (const block of blocks) {
-    const deps = depStmt.all(block.id as number) as { depends_on_block_id: number }[];
+    const deps = await query(
+      "SELECT depends_on_block_id FROM block_dependencies WHERE block_id = ?",
+      [block.id as number]
+    );
     block.dependencies = deps.map((d) => d.depends_on_block_id);
 
-    const depNames = depNameStmt.all(block.id as number) as { title: string }[];
+    const depNames = await query(
+      "SELECT b.title FROM block_dependencies bd JOIN blocks b ON b.id = bd.depends_on_block_id WHERE bd.block_id = ?",
+      [block.id as number]
+    );
     block.dependency_names = depNames.map((d) => d.title);
 
-    // Check if all dependencies are completed
     if (deps.length > 0) {
-      const depStatuses = db.prepare(
+      const depIds = deps.map((d) => d.depends_on_block_id as number);
+      const placeholders = depIds.map(() => "?").join(",");
+      const depStatuses = await queryOne(
         `SELECT COUNT(*) as total, COUNT(CASE WHEN status = 'completed' THEN 1 END) as completed
-         FROM blocks WHERE id IN (${deps.map(() => "?").join(",")})`
-      ).get(...deps.map((d) => d.depends_on_block_id)) as { total: number; completed: number };
-      block.depends_on_completed = depStatuses.total === depStatuses.completed;
+         FROM blocks WHERE id IN (${placeholders})`,
+        depIds
+      );
+      block.depends_on_completed = depStatuses!.total === depStatuses!.completed;
     } else {
       block.depends_on_completed = true;
     }
@@ -84,27 +79,26 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const db = getDb();
   const body = await request.json();
   const { project_id, title, description, trade_type, desired_completion_date, special_requirements, sort_order, dependencies } = body;
 
-  const result = db.prepare(
+  const result = await execute(
     `INSERT INTO blocks (project_id, title, description, trade_type, desired_completion_date, special_requirements, sort_order)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`
-  ).run(project_id, title, description, trade_type, desired_completion_date, special_requirements, sort_order || 0);
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [project_id, title, description, trade_type, desired_completion_date, special_requirements, sort_order || 0]
+  );
 
-  const blockId = result.lastInsertRowid;
+  const blockId = result.lastInsertRowid!;
 
-  // Add dependencies
   if (dependencies && dependencies.length > 0) {
-    const insertDep = db.prepare(
-      "INSERT INTO block_dependencies (block_id, depends_on_block_id) VALUES (?, ?)"
-    );
     for (const depId of dependencies) {
-      insertDep.run(blockId, depId);
+      await execute(
+        "INSERT INTO block_dependencies (block_id, depends_on_block_id) VALUES (?, ?)",
+        [blockId, depId]
+      );
     }
   }
 
-  const block = db.prepare("SELECT * FROM blocks WHERE id = ?").get(blockId);
+  const block = await queryOne("SELECT * FROM blocks WHERE id = ?", [blockId]);
   return NextResponse.json(block, { status: 201 });
 }
