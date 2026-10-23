@@ -23,6 +23,7 @@ export function GanttChart({ blocks }: GanttChartProps) {
     // Find date range across all blocks
     const dates: Date[] = [now];
     for (const b of blocks) {
+      if (b.desired_start_date) dates.push(new Date(b.desired_start_date));
       if (b.desired_completion_date) dates.push(new Date(b.desired_completion_date));
       if (b.estimated_completion_date) dates.push(new Date(b.estimated_completion_date));
       if (b.actual_completion_date) dates.push(new Date(b.actual_completion_date));
@@ -79,8 +80,8 @@ export function GanttChart({ blocks }: GanttChartProps) {
         barEnd = Math.ceil((estEnd.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
       } else if (block.desired_completion_date) {
         const desEnd = new Date(block.desired_completion_date);
-        const desStart = new Date(desEnd);
-        desStart.setDate(desStart.getDate() - 7);
+        const desStart = block.desired_start_date ? new Date(block.desired_start_date) : new Date(desEnd);
+        if (!block.desired_start_date) desStart.setDate(desStart.getDate() - 7);
         barStart = Math.max(0, Math.ceil((desStart.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)));
         barEnd = Math.ceil((desEnd.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
       } else {

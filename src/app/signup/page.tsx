@@ -4,20 +4,8 @@ import React, { useState } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { TRADE_TYPES } from "@/lib/trades";
 import { Building2, HardHat, Loader2 } from "lucide-react";
-
-const TRADE_TYPES = [
-  "Electrician",
-  "Plumber",
-  "Carpenter",
-  "Tile Installer",
-  "Painter",
-  "Roofer",
-  "HVAC Technician",
-  "Mason",
-  "Landscaper",
-  "General Contractor",
-];
 
 export default function SignupPage() {
   const router = useRouter();

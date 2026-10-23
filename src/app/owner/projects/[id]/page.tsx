@@ -5,6 +5,8 @@ import { useApp } from "@/lib/context";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { StatusBadge } from "@/components/StatusBadge";
+import { TRADE_TYPES } from "@/lib/trades";
+import { ScheduledBlock, bidFinish, checkBidSchedule } from "@/lib/schedule";
 import { GanttChart } from "@/components/GanttChart";
 import { Block, Bid, Project, Appreciation, ProgressUpdate } from "@/lib/types";
 import {
@@ -340,7 +342,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-medium truncate">{block.title}</span>
                       <StatusBadge status={block.status} />
-                      {block.bid_count && block.bid_count > 0 && (
+                      {!!block.bid_count && block.bid_count > 0 && (
                         <span className="text-xs text-gray-400">{block.bid_count} bid(s)</span>
                       )}
                     </div>
@@ -362,8 +364,10 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                         Est: {block.estimated_completion_date}
                       </p>
                     )}
-                    {block.desired_completion_date && !block.actual_completion_date && !block.estimated_completion_date && (
-                      <p className="text-xs text-gray-400">Target: {block.desired_completion_date}</p>
+                    {(block.desired_start_date || block.desired_completion_date) && !block.actual_completion_date && !block.estimated_completion_date && (
+                      <p className="text-xs text-gray-400">
+                        Target: {block.desired_start_date ? `${block.desired_start_date} → ` : ""}{block.desired_completion_date || "open"}
+                      </p>
                     )}
                   </div>
 
@@ -422,7 +426,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                     {block.awarded_price && (
                       <span className="text-sm font-medium text-green-600">${block.awarded_price.toLocaleString()}</span>
                     )}
-                    {block.bid_count && block.bid_count > 0 && (
+                    {!!block.bid_count && block.bid_count > 0 && (
                       <span className="badge bg-blue-100 text-blue-700">{block.bid_count} bids</span>
                     )}
                     {expandedBlock === block.id ? (
@@ -538,8 +542,10 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                                   <div className="flex items-center gap-4 mt-2 text-xs text-gray-500">
                                     {bid.start_date && <span>Start: {bid.start_date}</span>}
                                     {bid.duration_days && <span>Duration: {bid.duration_days} days</span>}
+                                    {bidFinish(bid.start_date, bid.duration_days) && <span>Finish: {bidFinish(bid.start_date, bid.duration_days)}</span>}
                                     <span>License: {bid.license_info || "N/A"}</span>
                                   </div>
+                                  <BidScheduleFit block={blockDetail} bid={bid} />
                                 </div>
                                 <div className="text-right shrink-0">
                                   <p className="text-lg font-bold text-gray-900">${bid.price.toLocaleString()}</p>
@@ -753,7 +759,6 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   );
 }
 
-const TRADE_TYPES = ["Electrician", "Plumber", "Carpenter", "Tile Installer", "Painter", "HVAC", "Roofer", "Concrete", "Landscaper", "General Contractor"];
 
 function BlockEditButton({
   block,
@@ -768,6 +773,7 @@ function BlockEditButton({
   const [editTitle, setEditTitle] = useState(block.title);
   const [editDescription, setEditDescription] = useState(block.description || "");
   const [editTradeType, setEditTradeType] = useState(block.trade_type || "");
+  const [editDesiredStart, setEditDesiredStart] = useState(block.desired_start_date || "");
   const [editDesiredDate, setEditDesiredDate] = useState(block.desired_completion_date || "");
   const [editSpecialReq, setEditSpecialReq] = useState(block.special_requirements || "");
   const [saving, setSaving] = useState(false);
@@ -783,6 +789,7 @@ function BlockEditButton({
         title: editTitle,
         description: editDescription,
         trade_type: editTradeType,
+        desired_start_date: editDesiredStart || null,
         desired_completion_date: editDesiredDate || null,
         special_requirements: editSpecialReq || null,
       },
@@ -829,8 +836,12 @@ function BlockEditButton({
           <textarea className="input" rows={2} value={editDescription} onChange={(e) => setEditDescription(e.target.value)} />
         </div>
         <div>
-          <label className="label">Desired Completion Date</label>
-          <input className="input" type="date" value={editDesiredDate} onChange={(e) => setEditDesiredDate(e.target.value)} />
+          <label className="label">Target Start Date</label>
+          <input className="input" type="date" value={editDesiredStart} onChange={(e) => setEditDesiredStart(e.target.value)} />
+        </div>
+        <div>
+          <label className="label">Target Completion Date</label>
+          <input className="input" type="date" value={editDesiredDate} min={editDesiredStart || undefined} onChange={(e) => setEditDesiredDate(e.target.value)} />
         </div>
         <div>
           <label className="label">Special Requirements</label>
@@ -852,5 +863,35 @@ function BlockEditButton({
         <button onClick={() => setEditing(false)} className="btn-secondary btn-sm">Cancel</button>
       </div>
     </div>
+  );
+}
+
+// Shows whether a bid's dates fit the owner's target and the neighbouring blocks.
+function BidScheduleFit({ block, bid }: { block: Record<string, unknown>; bid: Bid }) {
+  const check = checkBidSchedule(
+    block as unknown as ScheduledBlock,
+    (block.dependency_blocks as ScheduledBlock[]) || [],
+    (block.downstream_blocks as ScheduledBlock[]) || [],
+    bid.start_date,
+    bid.duration_days
+  );
+  if (!check) return null;
+  if (check.ok) {
+    return (
+      <p className="mt-2 text-xs text-green-700 flex items-center gap-1">
+        <CheckCircle2 className="w-3.5 h-3.5" />
+        Fits your schedule
+      </p>
+    );
+  }
+  return (
+    <ul className="mt-2 space-y-0.5">
+      {check.issues.map((issue) => (
+        <li key={issue} className="text-xs text-amber-700 flex items-start gap-1">
+          <AlertTriangle className="w-3.5 h-3.5 mt-px shrink-0" />
+          {issue}
+        </li>
+      ))}
+    </ul>
   );
 }

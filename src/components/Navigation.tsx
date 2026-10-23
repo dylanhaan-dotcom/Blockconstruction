@@ -35,6 +35,7 @@ export function Navigation() {
                 <>
                   <Link href="/trade/dashboard" className="text-sm font-medium text-gray-600 hover:text-gray-900">Dashboard</Link>
                   <Link href="/trade/blocks" className="text-sm font-medium text-gray-600 hover:text-gray-900">Browse Blocks</Link>
+                  <Link href="/trade/profile" className="text-sm font-medium text-gray-600 hover:text-gray-900">Profile</Link>
                 </>
               )}
             </div>
@@ -119,6 +120,7 @@ export function Navigation() {
               <>
                 <Link href="/trade/dashboard" onClick={() => setMobileMenuOpen(false)} className="block px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 rounded-lg">Dashboard</Link>
                 <Link href="/trade/blocks" onClick={() => setMobileMenuOpen(false)} className="block px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 rounded-lg">Browse Blocks</Link>
+                <Link href="/trade/profile" onClick={() => setMobileMenuOpen(false)} className="block px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 rounded-lg">Profile</Link>
               </>
             )}
             <button onClick={() => signOut({ callbackUrl: "/" })} className="w-full text-left px-3 py-2 text-sm font-medium text-red-600 hover:bg-gray-50 rounded-lg">Sign Out</button>

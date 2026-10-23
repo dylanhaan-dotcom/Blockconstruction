@@ -8,6 +8,8 @@ export async function GET(request: NextRequest) {
   const projectId = request.nextUrl.searchParams.get("project_id");
   const status = request.nextUrl.searchParams.get("status");
   const tradeType = request.nextUrl.searchParams.get("trade_type");
+  // Comma-separated list, e.g. a trade's primary and additional trades
+  const tradeTypes = request.nextUrl.searchParams.get("trade_types");
   const available = request.nextUrl.searchParams.get("available");
   const shareToken = request.nextUrl.searchParams.get("share_token");
 
@@ -22,14 +24,17 @@ export async function GET(request: NextRequest) {
       COUNT(DISTINCT bi.id) as bid_count,
       (SELECT u.name FROM bids bi2 JOIN users u ON u.id = bi2.trade_id WHERE bi2.block_id = b.id AND bi2.status = 'accepted' LIMIT 1) as awarded_trade,
       (SELECT bi2.price FROM bids bi2 WHERE bi2.block_id = b.id AND bi2.status = 'accepted' LIMIT 1) as awarded_price,
-      (p.owner_id = ? OR (p.share_token IS NOT NULL AND p.share_token = ?)) as can_see_award
+      (p.owner_id = ? OR (p.share_token IS NOT NULL AND p.share_token = ?)) as can_see_award,
+      (SELECT bi3.id FROM bids bi3 WHERE bi3.block_id = b.id AND bi3.trade_id = ? ORDER BY bi3.created_at DESC LIMIT 1) as my_bid_id,
+      (SELECT bi3.status FROM bids bi3 WHERE bi3.block_id = b.id AND bi3.trade_id = ? ORDER BY bi3.created_at DESC LIMIT 1) as my_bid_status,
+      (SELECT bi3.price FROM bids bi3 WHERE bi3.block_id = b.id AND bi3.trade_id = ? ORDER BY bi3.created_at DESC LIMIT 1) as my_bid_price
     FROM blocks b
     JOIN projects p ON b.project_id = p.id
     LEFT JOIN bids bi ON bi.block_id = b.id
   `;
 
   const conditions: string[] = [];
-  const params: (string | number | null)[] = [viewerId, shareToken];
+  const params: (string | number | null)[] = [viewerId, shareToken, viewerId, viewerId, viewerId];
 
   if (projectId) {
     conditions.push("b.project_id = ?");
@@ -42,6 +47,13 @@ export async function GET(request: NextRequest) {
   if (tradeType) {
     conditions.push("b.trade_type = ?");
     params.push(tradeType);
+  }
+  if (tradeTypes) {
+    const list = tradeTypes.split(",").map((t) => t.trim()).filter(Boolean);
+    if (list.length > 0) {
+      conditions.push(`b.trade_type IN (${list.map(() => "?").join(",")})`);
+      params.push(...list);
+    }
   }
   if (available === "true") {
     conditions.push("b.status = 'open_for_bids'");
@@ -93,12 +105,12 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   const body = await request.json();
-  const { project_id, title, description, trade_type, desired_completion_date, special_requirements, sort_order, dependencies } = body;
+  const { project_id, title, description, trade_type, desired_start_date, desired_completion_date, special_requirements, sort_order, dependencies } = body;
 
   const result = await execute(
-    `INSERT INTO blocks (project_id, title, description, trade_type, desired_completion_date, special_requirements, sort_order)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    [project_id, title, description, trade_type, desired_completion_date, special_requirements, sort_order || 0]
+    `INSERT INTO blocks (project_id, title, description, trade_type, desired_start_date, desired_completion_date, special_requirements, sort_order)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [project_id, title, description ?? null, trade_type ?? null, desired_start_date ?? null, desired_completion_date ?? null, special_requirements ?? null, sort_order || 0]
   );
 
   const blockId = result.lastInsertRowid!;

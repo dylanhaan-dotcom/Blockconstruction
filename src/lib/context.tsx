@@ -10,6 +10,8 @@ interface AppUser {
   email: string;
   role: string;
   trade_type: string | null;
+  secondary_trades: string[];
+  capabilities: string[];
   license_info: string | null;
   insurance_info: string | null;
   rating: number;
@@ -24,6 +26,7 @@ interface AppContextType {
   refreshNotifications: () => void;
   markNotificationRead: (id: number) => void;
   markAllRead: () => void;
+  refreshUser: () => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType>({
@@ -34,10 +37,11 @@ const AppContext = createContext<AppContextType>({
   refreshNotifications: () => {},
   markNotificationRead: () => {},
   markAllRead: () => {},
+  refreshUser: async () => {},
 });
 
 function AppContextProvider({ children }: { children: React.ReactNode }) {
-  const { data: session, status } = useSession();
+  const { data: session, status, update } = useSession();
   const [notifications, setNotifications] = useState<Notification[]>([]);
 
   const currentUser: AppUser | null = session?.user
@@ -47,6 +51,8 @@ function AppContextProvider({ children }: { children: React.ReactNode }) {
         email: session.user.email || "",
         role: (session.user as Record<string, unknown>).role as string,
         trade_type: (session.user as Record<string, unknown>).trade_type as string | null,
+        secondary_trades: ((session.user as Record<string, unknown>).secondary_trades as string[]) || [],
+        capabilities: ((session.user as Record<string, unknown>).capabilities as string[]) || [],
         license_info: ((session.user as Record<string, unknown>).license_info as string | null) || null,
         insurance_info: ((session.user as Record<string, unknown>).insurance_info as string | null) || null,
         rating: Number((session.user as Record<string, unknown>).rating) || 0,
@@ -100,6 +106,10 @@ function AppContextProvider({ children }: { children: React.ReactNode }) {
         refreshNotifications,
         markNotificationRead,
         markAllRead,
+        refreshUser: async () => {
+          // Passing data makes NextAuth run the jwt callback with trigger "update"
+          await update({});
+        },
       }}
     >
       {children}

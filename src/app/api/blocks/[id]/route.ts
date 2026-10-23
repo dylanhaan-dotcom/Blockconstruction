@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query, queryOne, execute } from "@/lib/db";
 import { auth } from "@/lib/auth";
+import { bidFinish } from "@/lib/schedule";
 
 export const dynamic = "force-dynamic";
 
@@ -27,10 +28,21 @@ export async function GET(
   );
   block.dependencies = deps.map((d) => d.depends_on_block_id);
 
-  block.dependency_blocks = await query(
-    "SELECT b.id, b.title, b.status FROM block_dependencies bd JOIN blocks b ON b.id = bd.depends_on_block_id WHERE bd.block_id = ?",
+  // Neighbouring blocks carry schedule dates (never prices or trade names) so a trade can plan around them.
+  const scheduleColumns = `b.id, b.title, b.status, b.desired_start_date, b.desired_completion_date,
+      b.estimated_completion_date, b.actual_completion_date,
+      (SELECT a.start_date FROM bids a WHERE a.block_id = b.id AND a.status IN ('accepted', 'needs_confirmation') LIMIT 1) as scheduled_start,
+      (SELECT a.duration_days FROM bids a WHERE a.block_id = b.id AND a.status IN ('accepted', 'needs_confirmation') LIMIT 1) as scheduled_duration`;
+  const withFinish = (rows: Record<string, unknown>[]) =>
+    rows.map(({ scheduled_duration, ...row }) => ({
+      ...row,
+      scheduled_finish: bidFinish(row.scheduled_start as string | null, scheduled_duration as number | null),
+    }));
+
+  block.dependency_blocks = withFinish(await query(
+    `SELECT ${scheduleColumns} FROM block_dependencies bd JOIN blocks b ON b.id = bd.depends_on_block_id WHERE bd.block_id = ?`,
     [Number(id)]
-  );
+  ));
 
   // Only the project owner may see every bid; anyone else only sees their own.
   const session = await auth();
@@ -69,12 +81,10 @@ export async function GET(
     block.depends_on_completed = true;
   }
 
-  block.downstream_blocks = await query(`
-    SELECT b.id, b.title, b.status
-    FROM block_dependencies bd
-    JOIN blocks b ON b.id = bd.block_id
-    WHERE bd.depends_on_block_id = ?
-  `, [Number(id)]);
+  block.downstream_blocks = withFinish(await query(
+    `SELECT ${scheduleColumns} FROM block_dependencies bd JOIN blocks b ON b.id = bd.block_id WHERE bd.depends_on_block_id = ?`,
+    [Number(id)]
+  ));
 
   return NextResponse.json(block);
 }
@@ -85,7 +95,7 @@ export async function PUT(
 ) {
   const { id } = await params;
   const body = await request.json();
-  const { status, estimated_completion_date, title, description, trade_type, desired_completion_date, special_requirements, reopen_bids } = body;
+  const { status, estimated_completion_date, title, description, trade_type, desired_start_date, desired_completion_date, special_requirements, reopen_bids } = body;
 
   if (status) {
     await execute("UPDATE blocks SET status = ?, updated_at = datetime('now') WHERE id = ?", [status, Number(id)]);
@@ -104,6 +114,9 @@ export async function PUT(
   }
   if (trade_type !== undefined) {
     await execute("UPDATE blocks SET trade_type = ?, updated_at = datetime('now') WHERE id = ?", [trade_type, Number(id)]);
+  }
+  if (desired_start_date !== undefined) {
+    await execute("UPDATE blocks SET desired_start_date = ?, updated_at = datetime('now') WHERE id = ?", [desired_start_date, Number(id)]);
   }
   if (desired_completion_date !== undefined) {
     await execute("UPDATE blocks SET desired_completion_date = ?, updated_at = datetime('now') WHERE id = ?", [desired_completion_date, Number(id)]);
