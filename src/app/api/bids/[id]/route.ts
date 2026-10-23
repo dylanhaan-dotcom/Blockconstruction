@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query, queryOne, execute } from "@/lib/db";
+import { auth } from "@/lib/auth";
+import { notifyOwnerOfRevision } from "@/lib/notifications";
 
 export const dynamic = "force-dynamic";
 
@@ -9,7 +11,7 @@ export async function PUT(
 ) {
   const { id } = await params;
   const body = await request.json();
-  const { status, price, start_date, duration_days, description, license_info, insurance_info, delay_confirmed } = body;
+  const { status, price, start_date, duration_days, description, license_info, insurance_info, delay_confirmed, revision_reason } = body;
 
   const bid = await queryOne("SELECT * FROM bids WHERE id = ?", [Number(id)]) as {
     id: number; block_id: number; trade_id: number; price: number; status: string;
@@ -19,13 +21,33 @@ export async function PUT(
     return NextResponse.json({ error: "Bid not found" }, { status: 404 });
   }
 
-  if (bid.status === "pending" || bid.status === "needs_confirmation") {
+  const session = await auth();
+  const viewerId = Number((session?.user as Record<string, unknown> | undefined)?.id) || 0;
+  const project = await queryOne(
+    "SELECT p.owner_id FROM blocks b JOIN projects p ON p.id = b.project_id WHERE b.id = ?",
+    [bid.block_id]
+  );
+  const isBidder = viewerId !== 0 && viewerId === bid.trade_id;
+  const isOwner = viewerId !== 0 && viewerId === Number(project?.owner_id);
+
+  const editsTerms = [price, start_date, duration_days, description, license_info, insurance_info, revision_reason].some((v) => v !== undefined);
+  if ((editsTerms || delay_confirmed !== undefined) && !isBidder) {
+    return NextResponse.json({ error: "Only the trade who submitted this bid can change it" }, { status: 403 });
+  }
+  if (status && !isOwner) {
+    return NextResponse.json({ error: "Only the project owner can change a bid's status" }, { status: 403 });
+  }
+
+  if (editsTerms && (bid.status === "pending" || bid.status === "needs_confirmation")) {
+    await execute("UPDATE bids SET is_revision = 1, updated_at = datetime('now') WHERE id = ?", [Number(id)]);
+    if (revision_reason !== undefined) await execute("UPDATE bids SET revision_reason = ?, updated_at = datetime('now') WHERE id = ?", [revision_reason || null, Number(id)]);
     if (price !== undefined) await execute("UPDATE bids SET price = ?, updated_at = datetime('now') WHERE id = ?", [price, Number(id)]);
     if (start_date !== undefined) await execute("UPDATE bids SET start_date = ?, updated_at = datetime('now') WHERE id = ?", [start_date, Number(id)]);
     if (duration_days !== undefined) await execute("UPDATE bids SET duration_days = ?, updated_at = datetime('now') WHERE id = ?", [duration_days, Number(id)]);
     if (description !== undefined) await execute("UPDATE bids SET description = ?, updated_at = datetime('now') WHERE id = ?", [description, Number(id)]);
     if (license_info !== undefined) await execute("UPDATE bids SET license_info = ?, updated_at = datetime('now') WHERE id = ?", [license_info, Number(id)]);
     if (insurance_info !== undefined) await execute("UPDATE bids SET insurance_info = ?, updated_at = datetime('now') WHERE id = ?", [insurance_info, Number(id)]);
+    await notifyOwnerOfRevision(bid.block_id, bid.trade_id);
   }
 
   if (delay_confirmed !== undefined) {
