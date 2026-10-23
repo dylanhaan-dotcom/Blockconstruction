@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query, queryOne, execute } from "@/lib/db";
+import { auth } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -31,13 +32,21 @@ export async function GET(
     [Number(id)]
   );
 
+  // Only the project owner may see every bid; anyone else only sees their own.
+  const session = await auth();
+  const viewerId = Number((session?.user as Record<string, unknown> | undefined)?.id) || 0;
+  const isOwner = viewerId !== 0 && Number(block.owner_id) === viewerId;
+
   block.bids = await query(`
     SELECT bi.*, u.name as trade_name, u.trade_type, u.rating as trade_rating, u.rating_count as trade_rating_count
     FROM bids bi
     JOIN users u ON u.id = bi.trade_id
-    WHERE bi.block_id = ?
+    WHERE bi.block_id = ?${isOwner ? "" : " AND bi.trade_id = ?"}
     ORDER BY bi.created_at DESC
-  `, [Number(id)]);
+  `, isOwner ? [Number(id)] : [Number(id), viewerId]);
+
+  const bidCount = await queryOne("SELECT COUNT(*) as count FROM bids WHERE block_id = ?", [Number(id)]);
+  block.bid_count = Number(bidCount?.count) || 0;
 
   block.progress_updates = await query(`
     SELECT pu.*, u.name as trade_name

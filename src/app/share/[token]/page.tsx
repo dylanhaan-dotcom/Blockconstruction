@@ -23,7 +23,7 @@ export default function SharedProjectPage({ params }: { params: Promise<{ token:
         if (!projects.length) throw new Error();
         const p = projects[0];
         setProject(p);
-        return fetch(`/api/blocks?project_id=${p.id}`);
+        return fetch(`/api/blocks?project_id=${p.id}&share_token=${encodeURIComponent(token)}`);
       })
       .then((r) => r.json())
       .then((b) => {

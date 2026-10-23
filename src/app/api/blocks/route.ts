@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query, queryOne, execute } from "@/lib/db";
+import { auth } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -8,6 +9,11 @@ export async function GET(request: NextRequest) {
   const status = request.nextUrl.searchParams.get("status");
   const tradeType = request.nextUrl.searchParams.get("trade_type");
   const available = request.nextUrl.searchParams.get("available");
+  const shareToken = request.nextUrl.searchParams.get("share_token");
+
+  // Awarded trade and price are only shown to the project owner or via the project's share link.
+  const session = await auth();
+  const viewerId = Number((session?.user as Record<string, unknown> | undefined)?.id) || 0;
 
   let sql = `
     SELECT b.*,
@@ -15,14 +21,15 @@ export async function GET(request: NextRequest) {
       p.address as project_address,
       COUNT(DISTINCT bi.id) as bid_count,
       (SELECT u.name FROM bids bi2 JOIN users u ON u.id = bi2.trade_id WHERE bi2.block_id = b.id AND bi2.status = 'accepted' LIMIT 1) as awarded_trade,
-      (SELECT bi2.price FROM bids bi2 WHERE bi2.block_id = b.id AND bi2.status = 'accepted' LIMIT 1) as awarded_price
+      (SELECT bi2.price FROM bids bi2 WHERE bi2.block_id = b.id AND bi2.status = 'accepted' LIMIT 1) as awarded_price,
+      (p.owner_id = ? OR (p.share_token IS NOT NULL AND p.share_token = ?)) as can_see_award
     FROM blocks b
     JOIN projects p ON b.project_id = p.id
     LEFT JOIN bids bi ON bi.block_id = b.id
   `;
 
   const conditions: string[] = [];
-  const params: (string | number)[] = [];
+  const params: (string | number | null)[] = [viewerId, shareToken];
 
   if (projectId) {
     conditions.push("b.project_id = ?");
@@ -49,6 +56,12 @@ export async function GET(request: NextRequest) {
   const blocks = await query(sql, params);
 
   for (const block of blocks) {
+    if (!block.can_see_award) {
+      block.awarded_trade = null;
+      block.awarded_price = null;
+    }
+    delete block.can_see_award;
+
     const deps = await query(
       "SELECT depends_on_block_id FROM block_dependencies WHERE block_id = ?",
       [block.id as number]

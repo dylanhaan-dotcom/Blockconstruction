@@ -31,6 +31,7 @@ interface BlockDetail {
   dependencies: number[];
   dependency_blocks: DepBlock[];
   downstream_blocks: DepBlock[];
+  bid_count: number;
   bids: Bid[];
   progress_updates: ProgressUpdate[];
 }
@@ -50,16 +51,10 @@ export default function TradeBlockDetailPage({ params }: { params: Promise<{ id:
   const [bidDescription, setBidDescription] = useState("");
   const [bidLicense, setBidLicense] = useState("");
   const [bidInsurance, setBidInsurance] = useState("");
-  const [isRevision, setIsRevision] = useState(false);
+  // Set when the form is revising an existing bid rather than creating one
+  const [revisingBidId, setRevisingBidId] = useState<number | null>(null);
   const [revisionReason, setRevisionReason] = useState("");
   const [submitting, setSubmitting] = useState(false);
-
-  // Edit bid state
-  const [editingBidId, setEditingBidId] = useState<number | null>(null);
-  const [editPrice, setEditPrice] = useState("");
-  const [editStartDate, setEditStartDate] = useState("");
-  const [editDuration, setEditDuration] = useState("");
-  const [editDescription, setEditDescription] = useState("");
 
   // Progress form
   const [showProgressForm, setShowProgressForm] = useState(false);
@@ -86,66 +81,62 @@ export default function TradeBlockDetailPage({ params }: { params: Promise<{ id:
     setBidInsurance(currentUser.insurance_info || "");
   }, [currentUser, router, fetchBlock]);
 
-  const submitBid = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!currentUser) return;
-    setSubmitting(true);
-
-    // Find existing bid if revision
-    const existingBid = block?.bids?.find(
-      (b) => b.trade_id === currentUser.id && b.status === "pending"
-    );
-
-    await fetch("/api/bids", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        block_id: Number(id),
-        trade_id: currentUser.id,
-        price: Number(bidPrice),
-        start_date: bidStartDate || null,
-        duration_days: bidDuration ? Number(bidDuration) : null,
-        description: bidDescription,
-        license_info: bidLicense,
-        insurance_info: bidInsurance,
-        is_revision: isRevision ? 1 : 0,
-        original_bid_id: isRevision && existingBid ? existingBid.id : null,
-        revision_reason: revisionReason || null,
-      }),
-    });
-
-    setShowBidForm(false);
+  const openNewBidForm = () => {
+    setRevisingBidId(null);
     setBidPrice("");
     setBidStartDate("");
     setBidDuration("");
     setBidDescription("");
     setRevisionReason("");
-    setIsRevision(false);
-    setSubmitting(false);
-    fetchBlock();
+    setBidLicense(currentUser?.license_info || "");
+    setBidInsurance(currentUser?.insurance_info || "");
+    setShowBidForm(true);
   };
 
-  const startEditBid = (bid: Bid) => {
-    setEditingBidId(bid.id);
-    setEditPrice(String(bid.price));
-    setEditStartDate(bid.start_date || "");
-    setEditDuration(bid.duration_days ? String(bid.duration_days) : "");
-    setEditDescription(bid.description || "");
+  const openReviseBidForm = (bid: Bid) => {
+    setRevisingBidId(bid.id);
+    setBidPrice(String(bid.price));
+    setBidStartDate(bid.start_date || "");
+    setBidDuration(bid.duration_days ? String(bid.duration_days) : "");
+    setBidDescription(bid.description || "");
+    setBidLicense(bid.license_info || "");
+    setBidInsurance(bid.insurance_info || "");
+    setRevisionReason(bid.revision_reason || "");
+    setShowBidForm(true);
   };
 
-  const saveEditBid = async (bidId: number) => {
+  const submitBid = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentUser) return;
     setSubmitting(true);
-    await fetch(`/api/bids/${bidId}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        price: Number(editPrice),
-        start_date: editStartDate || null,
-        duration_days: editDuration ? Number(editDuration) : null,
-        description: editDescription,
-      }),
-    });
-    setEditingBidId(null);
+
+    const terms = {
+      price: Number(bidPrice),
+      start_date: bidStartDate || null,
+      duration_days: bidDuration ? Number(bidDuration) : null,
+      description: bidDescription,
+      license_info: bidLicense,
+      insurance_info: bidInsurance,
+    };
+
+    // A revision edits the existing bid in place instead of creating a new one
+    if (revisingBidId) {
+      await fetch(`/api/bids/${revisingBidId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...terms, revision_reason: revisionReason || null }),
+      });
+    } else {
+      await fetch("/api/bids", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...terms, block_id: Number(id) }),
+      });
+    }
+
+    setShowBidForm(false);
+    setRevisingBidId(null);
+    setRevisionReason("");
     setSubmitting(false);
     fetchBlock();
   };
@@ -196,6 +187,7 @@ export default function TradeBlockDetailPage({ params }: { params: Promise<{ id:
   const myBids = bids.filter((b) => b.trade_id === currentUser.id);
   const myAcceptedBid = myBids.find((b) => b.status === "accepted");
   const myNeedsConfirmation = myBids.filter((b) => b.status === "needs_confirmation");
+  const myOpenBid = myBids.find((b) => b.status === "pending" || b.status === "needs_confirmation");
   const isAssignedTrade = !!myAcceptedBid;
   const canBid = block.status === "open_for_bids" || block.status === "awarded";
   const canUpdateProgress = isAssignedTrade && (block.status === "awarded" || block.status === "in_progress" || block.status === "delayed");
@@ -258,7 +250,7 @@ export default function TradeBlockDetailPage({ params }: { params: Promise<{ id:
           </div>
           <div>
             <p className="text-xs font-medium text-gray-400 uppercase">Current Bids</p>
-            <p className="mt-0.5">{bids.length} bid{bids.length !== 1 ? "s" : ""}</p>
+            <p className="mt-0.5">{block.bid_count} bid{block.bid_count !== 1 ? "s" : ""}</p>
           </div>
         </div>
 
@@ -308,22 +300,16 @@ export default function TradeBlockDetailPage({ params }: { params: Promise<{ id:
 
       {/* Action buttons */}
       <div className="flex flex-wrap gap-3 mb-6">
-        {canBid && (
-          <button
-            onClick={() => { setShowBidForm(true); setIsRevision(false); }}
-            className="btn-primary flex items-center gap-2"
-          >
+        {canBid && !myOpenBid && !myAcceptedBid && (
+          <button onClick={openNewBidForm} className="btn-primary flex items-center gap-2">
             <Send className="w-4 h-4" />
             Submit Bid
           </button>
         )}
-        {canBid && myBids.length > 0 && (
-          <button
-            onClick={() => { setShowBidForm(true); setIsRevision(true); }}
-            className="btn-accent flex items-center gap-2"
-          >
-            <Send className="w-4 h-4" />
-            Submit Revised Bid
+        {myOpenBid && (
+          <button onClick={() => openReviseBidForm(myOpenBid)} className="btn-accent flex items-center gap-2">
+            <Pencil className="w-4 h-4" />
+            Revise Bid
           </button>
         )}
         {canUpdateProgress && (
@@ -342,7 +328,7 @@ export default function TradeBlockDetailPage({ params }: { params: Promise<{ id:
         <div className="card mb-6 border-2 border-primary-200">
           <h2 className="font-semibold mb-4 flex items-center gap-2">
             <Send className="w-4 h-4 text-primary-600" />
-            {isRevision ? "Submit Revised Bid" : "Submit Bid"}
+            {revisingBidId ? "Revise Bid" : "Submit Bid"}
           </h2>
           <form onSubmit={submitBid}>
             <div className="grid sm:grid-cols-2 gap-4">
@@ -370,7 +356,7 @@ export default function TradeBlockDetailPage({ params }: { params: Promise<{ id:
                 <label className="label">Insurance Info</label>
                 <input className="input" value={bidInsurance} onChange={(e) => setBidInsurance(e.target.value)} placeholder="Insurance details" />
               </div>
-              {isRevision && (
+              {revisingBidId && (
                 <div>
                   <label className="label">Reason for Revision</label>
                   <input className="input" value={revisionReason} onChange={(e) => setRevisionReason(e.target.value)} placeholder="e.g., Timeline shifted due to upstream delay" />
@@ -379,7 +365,7 @@ export default function TradeBlockDetailPage({ params }: { params: Promise<{ id:
             </div>
             <div className="flex items-center gap-3 mt-4">
               <button type="submit" disabled={submitting} className="btn-primary">
-                {submitting ? "Submitting..." : isRevision ? "Submit Revised Bid" : "Submit Bid"}
+                {submitting ? "Saving..." : revisingBidId ? "Save Revised Bid" : "Submit Bid"}
               </button>
               <button type="button" onClick={() => setShowBidForm(false)} className="btn-secondary">Cancel</button>
             </div>
@@ -462,7 +448,7 @@ export default function TradeBlockDetailPage({ params }: { params: Promise<{ id:
                       {submitting ? "Confirming..." : "Confirm Schedule"}
                     </button>
                     <button
-                      onClick={() => startEditBid(bid)}
+                      onClick={() => openReviseBidForm(bid)}
                       className="btn-secondary btn-sm flex items-center gap-1.5"
                     >
                       <Pencil className="w-3.5 h-3.5" />
@@ -489,98 +475,34 @@ export default function TradeBlockDetailPage({ params }: { params: Promise<{ id:
                   bid.status === "needs_confirmation" ? "border-amber-300 bg-amber-50" : ""
                 }`}
               >
-                {editingBidId === bid.id ? (
-                  /* Inline Edit Form */
-                  <div>
-                    <h3 className="text-sm font-semibold text-primary-600 mb-3 flex items-center gap-1.5">
-                      <Pencil className="w-3.5 h-3.5" />
-                      Edit Bid
-                    </h3>
-                    <div className="grid sm:grid-cols-2 gap-3">
-                      <div>
-                        <label className="label">Price ($) *</label>
-                        <input className="input" type="number" value={editPrice} onChange={(e) => setEditPrice(e.target.value)} required min="1" />
-                      </div>
-                      <div>
-                        <label className="label">Proposed Start Date</label>
-                        <input className="input" type="date" value={editStartDate} onChange={(e) => setEditStartDate(e.target.value)} />
-                      </div>
-                      <div>
-                        <label className="label">Duration (days)</label>
-                        <input className="input" type="number" value={editDuration} onChange={(e) => setEditDuration(e.target.value)} min="1" />
-                      </div>
-                      <div className="sm:col-span-2">
-                        <label className="label">Description</label>
-                        <textarea className="input" rows={2} value={editDescription} onChange={(e) => setEditDescription(e.target.value)} />
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2 mt-3">
-                      <button onClick={() => saveEditBid(bid.id)} disabled={submitting} className="btn-primary btn-sm">
-                        {submitting ? "Saving..." : "Save Changes"}
-                      </button>
-                      <button onClick={() => setEditingBidId(null)} className="btn-secondary btn-sm">Cancel</button>
-                    </div>
-                  </div>
-                ) : (
-                  /* Normal Bid Display */
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <StatusBadge status={bid.status} />
-                        {bid.is_revision ? (
-                          <span className="badge bg-orange-100 text-orange-700">Revised</span>
-                        ) : null}
-                        {bid.delay_confirmed ? (
-                          <span className="badge bg-green-100 text-green-700">Schedule Confirmed</span>
-                        ) : null}
-                        <span className="text-xs text-gray-400">{new Date(bid.created_at).toLocaleDateString()}</span>
-                      </div>
-                      {bid.description && <p className="text-sm text-gray-600 mt-1">{bid.description}</p>}
-                      <div className="flex items-center gap-4 mt-2 text-xs text-gray-500">
-                        {bid.start_date && <span>Start: {bid.start_date}</span>}
-                        {bid.duration_days && <span>Duration: {bid.duration_days} days</span>}
-                      </div>
-                      {(bid.status === "pending" || bid.status === "needs_confirmation") && (
-                        <button
-                          onClick={() => startEditBid(bid)}
-                          className="mt-2 text-xs text-primary-600 hover:text-primary-800 flex items-center gap-1"
-                        >
-                          <Pencil className="w-3 h-3" />
-                          Edit Bid
-                        </button>
-                      )}
-                    </div>
-                    <p className="text-xl font-bold">${bid.price.toLocaleString()}</p>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* All Bids (visible to trade for transparency) */}
-      {bids.length > 0 && (
-        <div className="mb-6">
-          <h2 className="text-lg font-semibold mb-3">All Bids ({bids.length})</h2>
-          <div className="space-y-2">
-            {bids.map((bid) => (
-              <div key={bid.id} className="card !p-4">
                 <div className="flex items-start justify-between">
                   <div>
                     <div className="flex items-center gap-2">
-                      <span className="font-medium text-sm">{bid.trade_name}</span>
-                      <span className="text-xs text-gray-400">{bid.trade_type}</span>
-                      {bid.trade_rating && bid.trade_rating > 0 && (
-                        <span className="text-xs text-yellow-600">{bid.trade_rating} ★</span>
-                      )}
                       <StatusBadge status={bid.status} />
                       {bid.is_revision ? (
                         <span className="badge bg-orange-100 text-orange-700">Revised</span>
                       ) : null}
+                      {bid.delay_confirmed ? (
+                        <span className="badge bg-green-100 text-green-700">Schedule Confirmed</span>
+                      ) : null}
+                      <span className="text-xs text-gray-400">{new Date(bid.created_at).toLocaleDateString()}</span>
                     </div>
+                    {bid.description && <p className="text-sm text-gray-600 mt-1">{bid.description}</p>}
+                    <div className="flex items-center gap-4 mt-2 text-xs text-gray-500">
+                      {bid.start_date && <span>Start: {bid.start_date}</span>}
+                      {bid.duration_days && <span>Duration: {bid.duration_days} days</span>}
+                    </div>
+                    {(bid.status === "pending" || bid.status === "needs_confirmation") && (
+                      <button
+                        onClick={() => openReviseBidForm(bid)}
+                        className="mt-2 text-xs text-primary-600 hover:text-primary-800 flex items-center gap-1"
+                      >
+                        <Pencil className="w-3 h-3" />
+                        Revise Bid
+                      </button>
+                    )}
                   </div>
-                  <p className="font-bold">${bid.price.toLocaleString()}</p>
+                  <p className="text-xl font-bold">${bid.price.toLocaleString()}</p>
                 </div>
               </div>
             ))}
