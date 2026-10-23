@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import { useApp } from "@/lib/context";
+import { TRADE_TYPES } from "@/lib/trades";
 import { useRouter } from "next/navigation";
 import { ProjectTemplate } from "@/lib/types";
 import { ArrowLeft, Plus, Trash2, FileText } from "lucide-react";
@@ -11,6 +12,7 @@ interface BlockForm {
   title: string;
   description: string;
   trade_type: string;
+  desired_start_date: string;
   desired_completion_date: string;
   special_requirements: string;
   depends_on: number[];
@@ -46,6 +48,7 @@ export default function NewProjectPage() {
         title: b.title,
         description: b.description,
         trade_type: b.trade_type,
+        desired_start_date: "",
         desired_completion_date: "",
         special_requirements: b.special_requirements,
         depends_on: b.depends_on,
@@ -56,7 +59,7 @@ export default function NewProjectPage() {
   const addBlock = () => {
     setBlocks([
       ...blocks,
-      { title: "", description: "", trade_type: "", desired_completion_date: "", special_requirements: "", depends_on: [] },
+      { title: "", description: "", trade_type: "", desired_start_date: "", desired_completion_date: "", special_requirements: "", depends_on: [] },
     ]);
   };
 
@@ -112,6 +115,7 @@ export default function NewProjectPage() {
           title: block.title,
           description: block.description,
           trade_type: block.trade_type,
+          desired_start_date: block.desired_start_date || null,
           desired_completion_date: block.desired_completion_date || null,
           special_requirements: block.special_requirements || null,
           sort_order: i,
@@ -126,8 +130,6 @@ export default function NewProjectPage() {
   };
 
   if (!currentUser) return null;
-
-  const TRADE_TYPES = ["Electrician", "Plumber", "Carpenter", "Tile Installer", "Painter", "HVAC", "Roofer", "Concrete", "Landscaper", "General Contractor"];
 
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 py-6">
@@ -265,11 +267,21 @@ export default function NewProjectPage() {
                       />
                     </div>
                     <div>
-                      <label className="label">Desired Completion Date</label>
+                      <label className="label">Target Start Date</label>
+                      <input
+                        className="input"
+                        type="date"
+                        value={block.desired_start_date}
+                        onChange={(e) => updateBlock(index, "desired_start_date", e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <label className="label">Target Completion Date</label>
                       <input
                         className="input"
                         type="date"
                         value={block.desired_completion_date}
+                        min={block.desired_start_date || undefined}
                         onChange={(e) => updateBlock(index, "desired_completion_date", e.target.value)}
                       />
                     </div>

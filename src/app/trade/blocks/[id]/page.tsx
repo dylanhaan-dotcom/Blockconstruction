@@ -5,13 +5,17 @@ import { useApp } from "@/lib/context";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { StatusBadge } from "@/components/StatusBadge";
+import { ScheduleTimeline, TimelineRow } from "@/components/ScheduleTimeline";
 import { Bid, ProgressUpdate } from "@/lib/types";
 import {
+  ScheduledBlock, bidFinish, checkBidSchedule, expectedFinish, expectedStart, targetWindow,
+} from "@/lib/schedule";
+import {
   ArrowLeft, MapPin, Calendar, Clock, CheckCircle2,
-  AlertTriangle, Send, ArrowRight, ClipboardEdit, Pencil
+  AlertTriangle, Send, ArrowRight, ClipboardEdit, Pencil, CalendarCheck
 } from "lucide-react";
 
-interface DepBlock { id: number; title: string; status: string }
+type DepBlock = ScheduledBlock;
 
 interface BlockDetail {
   id: number;
@@ -20,6 +24,7 @@ interface BlockDetail {
   description: string | null;
   trade_type: string | null;
   special_requirements: string | null;
+  desired_start_date: string | null;
   desired_completion_date: string | null;
   estimated_completion_date: string | null;
   actual_completion_date: string | null;
@@ -81,11 +86,20 @@ export default function TradeBlockDetailPage({ params }: { params: Promise<{ id:
     setBidInsurance(currentUser.insurance_info || "");
   }, [currentUser, router, fetchBlock]);
 
+  // Fill the bid's dates with the owner's target window
+  const matchOwnerSchedule = () => {
+    if (!block) return;
+    const target = targetWindow(block, block.dependency_blocks || []);
+    if (target.start) setBidStartDate(target.start);
+    if (target.duration) setBidDuration(String(target.duration));
+  };
+
   const openNewBidForm = () => {
+    const target = block ? targetWindow(block, block.dependency_blocks || []) : null;
     setRevisingBidId(null);
     setBidPrice("");
-    setBidStartDate("");
-    setBidDuration("");
+    setBidStartDate(target?.start || "");
+    setBidDuration(target?.duration ? String(target.duration) : "");
     setBidDescription("");
     setRevisionReason("");
     setBidLicense(currentUser?.license_info || "");
@@ -192,6 +206,54 @@ export default function TradeBlockDetailPage({ params }: { params: Promise<{ id:
   const canBid = block.status === "open_for_bids" || block.status === "awarded";
   const canUpdateProgress = isAssignedTrade && (block.status === "awarded" || block.status === "in_progress" || block.status === "delayed");
 
+  // Schedule: the owner's target leads; the trade's dates (live from the form while it's open) are checked against it.
+  const upstream = block.dependency_blocks || [];
+  const downstream = block.downstream_blocks || [];
+  const target = targetWindow(block, upstream);
+  const referenceBid = myOpenBid || myAcceptedBid;
+  const proposalStart = showBidForm ? bidStartDate : referenceBid?.start_date || "";
+  const proposalDuration = showBidForm ? Number(bidDuration) || null : referenceBid?.duration_days || null;
+  const scheduleCheck = checkBidSchedule(block, upstream, downstream, proposalStart, proposalDuration);
+  const timelineRows: TimelineRow[] = [
+    ...upstream.map((b) => ({
+      key: `up-${b.id}`, label: b.title, sublabel: `Upstream · ${b.status.replace(/_/g, " ")}`,
+      kind: "upstream" as const, start: expectedStart(b), finish: expectedFinish(b),
+    })),
+    {
+      key: "target", label: "Owner's target", sublabel: target.startIsDerived ? "Start follows upstream" : undefined,
+      kind: "target", start: target.start, finish: target.finish,
+    },
+    ...(proposalStart
+      ? [{
+          key: "proposal", label: showBidForm ? "Your proposed dates" : "Your bid",
+          kind: "proposal" as const, start: proposalStart, finish: bidFinish(proposalStart, proposalDuration),
+          warn: scheduleCheck ? !scheduleCheck.ok : false,
+        }]
+      : []),
+    ...downstream.map((b) => ({
+      key: `down-${b.id}`, label: b.title, sublabel: `Downstream · ${b.status.replace(/_/g, " ")}`,
+      kind: "downstream" as const, start: expectedStart(b), finish: expectedFinish(b),
+    })),
+  ];
+
+  const scheduleFeedback = scheduleCheck && (
+    scheduleCheck.ok ? (
+      <p className="text-sm text-green-700 flex items-center gap-1.5">
+        <CheckCircle2 className="w-4 h-4" />
+        These dates fit the owner&apos;s schedule and the neighbouring blocks.
+      </p>
+    ) : (
+      <ul className="text-sm text-amber-700 space-y-1">
+        {scheduleCheck.issues.map((issue) => (
+          <li key={issue} className="flex items-start gap-1.5">
+            <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+            {issue}
+          </li>
+        ))}
+      </ul>
+    )
+  );
+
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 py-6">
       <Link href="/trade/blocks" className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 mb-4">
@@ -235,10 +297,12 @@ export default function TradeBlockDetailPage({ params }: { params: Promise<{ id:
 
         <div className="grid sm:grid-cols-3 gap-4 text-sm">
           <div>
-            <p className="text-xs font-medium text-gray-400 uppercase">Target Date</p>
+            <p className="text-xs font-medium text-gray-400 uppercase">Target Schedule</p>
             <p className="mt-0.5 flex items-center gap-1.5">
               <Calendar className="w-4 h-4 text-gray-400" />
-              {block.desired_completion_date || "Not set"}
+              {target.start || target.finish
+                ? `${target.start || "?"} → ${target.finish || "?"}`
+                : "Not set"}
             </p>
           </div>
           <div>
@@ -298,6 +362,32 @@ export default function TradeBlockDetailPage({ params }: { params: Promise<{ id:
         )}
       </div>
 
+      {/* Schedule */}
+      <div className="card mb-6">
+        <div className="flex flex-wrap items-start justify-between gap-2 mb-1">
+          <h2 className="font-semibold flex items-center gap-2">
+            <CalendarCheck className="w-4 h-4 text-primary-600" />
+            Schedule
+          </h2>
+          {target.duration && (
+            <span className="text-xs text-gray-500">Owner&apos;s window: {target.duration} day{target.duration !== 1 ? "s" : ""}</span>
+          )}
+        </div>
+        <p className="text-sm text-gray-500 mb-4">
+          {target.start || target.finish ? (
+            <>
+              The owner wants this block done {target.start ? <>from <strong>{target.start}</strong> </> : null}
+              {target.finish ? <>by <strong>{target.finish}</strong></> : null}.
+              {target.startIsDerived && target.latestUpstream && <> No start date was set, so the suggested start is the day after upstream work is expected to finish ({target.latestUpstream}).</>}
+            </>
+          ) : (
+            "The owner hasn't set target dates for this block yet."
+          )}
+        </p>
+        <ScheduleTimeline rows={timelineRows} />
+        {scheduleFeedback && !showBidForm && <div className="mt-4 pt-4 border-t border-gray-100">{scheduleFeedback}</div>}
+      </div>
+
       {/* Action buttons */}
       <div className="flex flex-wrap gap-3 mb-6">
         {canBid && !myOpenBid && !myAcceptedBid && (
@@ -343,6 +433,22 @@ export default function TradeBlockDetailPage({ params }: { params: Promise<{ id:
               <div>
                 <label className="label">Duration (days)</label>
                 <input className="input" type="number" value={bidDuration} onChange={(e) => setBidDuration(e.target.value)} min="1" placeholder="e.g., 5" />
+              </div>
+              <div className="sm:col-span-2 -mt-1 p-3 rounded-lg bg-gray-50 border border-gray-100 space-y-2">
+                <div className="flex flex-wrap items-center gap-3">
+                  {(target.start || target.duration) && (
+                    <button type="button" onClick={matchOwnerSchedule} className="btn-secondary btn-sm flex items-center gap-1.5">
+                      <CalendarCheck className="w-3.5 h-3.5" />
+                      Match owner&apos;s schedule
+                    </button>
+                  )}
+                  {bidStartDate && bidDuration && (
+                    <span className="text-xs text-gray-500">
+                      Your dates: {bidStartDate} → {bidFinish(bidStartDate, Number(bidDuration))}
+                    </span>
+                  )}
+                </div>
+                {scheduleFeedback || <p className="text-xs text-gray-500">Enter a start date and duration to check them against the schedule above.</p>}
               </div>
               <div>
                 <label className="label">License Info</label>

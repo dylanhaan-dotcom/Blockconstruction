@@ -6,6 +6,8 @@ export interface User {
   email: string;
   role: UserRole;
   trade_type: string | null;
+  secondary_trades?: string[];
+  capabilities?: string[];
   license_info: string | null;
   insurance_info: string | null;
   rating: number;
@@ -43,6 +45,7 @@ export interface Block {
   description: string | null;
   trade_type: string | null;
   status: BlockStatus;
+  desired_start_date: string | null;
   desired_completion_date: string | null;
   estimated_completion_date: string | null;
   actual_completion_date: string | null;
@@ -58,6 +61,9 @@ export interface Block {
   dependencies?: number[];
   dependency_names?: string[];
   depends_on_completed?: boolean;
+  my_bid_id?: number | null;
+  my_bid_status?: BidStatus | null;
+  my_bid_price?: number | null;
 }
 
 export type BidStatus = "pending" | "accepted" | "rejected" | "revised" | "needs_confirmation";

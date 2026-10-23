@@ -2,6 +2,7 @@ import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { queryOne } from "./db";
+import { parseList } from "./trades";
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
   providers: [
@@ -33,6 +34,8 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           email: user.email as string,
           role: user.role as string,
           trade_type: user.trade_type as string | null,
+          secondary_trades: parseList(user.secondary_trades),
+          capabilities: parseList(user.capabilities),
           license_info: (user.license_info as string | null) || null,
           insurance_info: (user.insurance_info as string | null) || null,
           rating: Number(user.rating) || 0,
@@ -42,11 +45,25 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     }),
   ],
   callbacks: {
-    async jwt({ token, user }) {
+    async jwt({ token, user, trigger }) {
+      // After a profile edit the client calls update(); reload the stored fields.
+      if (trigger === "update" && token.id) {
+        const fresh = await queryOne("SELECT * FROM users WHERE id = ?", [Number(token.id)]);
+        if (fresh) {
+          token.name = fresh.name as string;
+          token.trade_type = fresh.trade_type;
+          token.secondary_trades = parseList(fresh.secondary_trades);
+          token.capabilities = parseList(fresh.capabilities);
+          token.license_info = fresh.license_info || null;
+          token.insurance_info = fresh.insurance_info || null;
+        }
+      }
       if (user) {
         token.id = user.id;
         token.role = (user as Record<string, unknown>).role;
         token.trade_type = (user as Record<string, unknown>).trade_type;
+        token.secondary_trades = (user as Record<string, unknown>).secondary_trades;
+        token.capabilities = (user as Record<string, unknown>).capabilities;
         token.license_info = (user as Record<string, unknown>).license_info;
         token.insurance_info = (user as Record<string, unknown>).insurance_info;
         token.rating = (user as Record<string, unknown>).rating;
@@ -61,6 +78,8 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         u.id = token.id;
         u.role = token.role;
         u.trade_type = token.trade_type;
+        u.secondary_trades = token.secondary_trades || [];
+        u.capabilities = token.capabilities || [];
         u.license_info = token.license_info;
         u.insurance_info = token.insurance_info;
         u.rating = token.rating;

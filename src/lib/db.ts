@@ -118,6 +118,18 @@ async function initializeSchema(db: Client) {
     ],
     "write"
   );
+
+  // Columns added after the first release; existing databases get them on startup.
+  await addColumnIfMissing(db, "users", "secondary_trades", "TEXT");
+  await addColumnIfMissing(db, "users", "capabilities", "TEXT");
+  await addColumnIfMissing(db, "blocks", "desired_start_date", "TEXT");
+}
+
+async function addColumnIfMissing(db: Client, table: string, column: string, type: string) {
+  const info = await db.execute(`PRAGMA table_info(${table})`);
+  if (!info.rows.some((row) => row.name === column)) {
+    await db.execute(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
+  }
 }
 
 async function autoSeed(db: Client) {
