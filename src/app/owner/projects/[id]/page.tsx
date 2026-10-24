@@ -8,6 +8,9 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { TRADE_TYPES } from "@/lib/trades";
 import { ScheduledBlock, bidFinish, checkBidSchedule } from "@/lib/schedule";
 import { GanttChart } from "@/components/GanttChart";
+import { DurationHint } from "@/components/DurationHint";
+import { Attachments } from "@/components/Attachments";
+import { suggestSchedule } from "@/lib/durations";
 import { Block, Bid, Project, Appreciation, ProgressUpdate } from "@/lib/types";
 import {
   ArrowLeft, ChevronDown, ChevronUp, DollarSign, Heart,
@@ -26,6 +29,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   const [expandedBlock, setExpandedBlock] = useState<number | null>(null);
   const [blockDetail, setBlockDetail] = useState<Record<string, unknown> | null>(null);
   const [appreciations, setAppreciations] = useState<Appreciation[]>([]);
+  const [projectBids, setProjectBids] = useState<Bid[]>([]);
   const [showAppreciationModal, setShowAppreciationModal] = useState<{ tradeId: number; tradeName: string; blockId?: number } | null>(null);
   const [appreciationType, setAppreciationType] = useState<string>("coffee");
   const [customAmount, setCustomAmount] = useState("");
@@ -33,6 +37,8 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TabView>("timeline");
   const [shareLinkCopied, setShareLinkCopied] = useState(false);
+  const [scheduleStart, setScheduleStart] = useState("");
+  const [scheduling, setScheduling] = useState(false);
 
   const fetchData = useCallback(() => {
     if (!id) return;
@@ -40,10 +46,12 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       fetch(`/api/projects/${id}`).then((r) => r.json()),
       fetch(`/api/blocks?project_id=${id}`).then((r) => r.json()),
       fetch(`/api/appreciation?from_user_id=${currentUser?.id}`).then((r) => r.json()),
-    ]).then(([p, b, a]) => {
+      fetch(`/api/bids?project_id=${id}`).then((r) => (r.ok ? r.json() : [])),
+    ]).then(([p, b, a, bids]) => {
       setProject(p);
       setBlocks(b);
       setAppreciations(a);
+      setProjectBids(bids);
       setLoading(false);
     });
   }, [id, currentUser?.id]);
@@ -103,6 +111,35 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     fetchData();
     if (expandedBlock) fetchBlockDetail(expandedBlock);
     refreshNotifications();
+  };
+
+  // Fill empty target dates on unfinished blocks from typical durations and dependencies
+  const applySuggestedSchedule = async () => {
+    if (!scheduleStart) return;
+    setScheduling(true);
+    const indexById = new Map(blocks.map((b, i) => [b.id, i]));
+    const suggested = suggestSchedule(
+      blocks.map((b) => ({
+        title: b.title,
+        trade_type: b.trade_type,
+        depends_on: (b.dependencies || []).map((d) => indexById.get(d)).filter((i): i is number => i !== undefined),
+        start: b.desired_start_date,
+        finish: b.desired_completion_date || b.actual_completion_date?.slice(0, 10) || null,
+      })),
+      scheduleStart
+    );
+    for (let i = 0; i < blocks.length; i++) {
+      const b = blocks[i];
+      if (b.status === "completed") continue;
+      if (b.desired_start_date === suggested[i].start && b.desired_completion_date === suggested[i].finish) continue;
+      await fetch(`/api/blocks/${b.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ desired_start_date: suggested[i].start, desired_completion_date: suggested[i].finish }),
+      });
+    }
+    setScheduling(false);
+    fetchData();
   };
 
   const toggleParallelBidding = async () => {
@@ -239,6 +276,14 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
             }}
           />
         </div>
+        <Attachments
+          projectId={project.id}
+          blockId={null}
+          canEdit
+          title="Project files"
+          emptyText="Add plans, photos, or specs that every trade bidding on this project should see. Up to 4 MB per file."
+          className="mt-4 pt-4 border-t border-gray-100"
+        />
       </div>
 
       {/* Project Settings */}
@@ -259,6 +304,28 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
           </label>
           <p className="text-xs text-gray-500">
             Dependencies govern when work can start, not when bidding opens. Open individual blocks for bids from the Blocks tab.
+          </p>
+        </div>
+        <div className="mt-4 pt-4 border-t border-gray-100">
+          <p className="text-sm font-medium text-gray-700 mb-2">Suggest a schedule</p>
+          <div className="flex flex-wrap items-center gap-3">
+            <input
+              className="input !w-auto"
+              type="date"
+              value={scheduleStart}
+              onChange={(e) => setScheduleStart(e.target.value)}
+              aria-label="Project start date"
+            />
+            <button
+              onClick={applySuggestedSchedule}
+              disabled={!scheduleStart || scheduling}
+              className="btn-secondary btn-sm"
+            >
+              {scheduling ? "Filling dates..." : "Fill empty target dates"}
+            </button>
+          </div>
+          <p className="text-xs text-gray-500 mt-2">
+            Uses typical job lengths and your block dependencies, starting from this date. Dates you&apos;ve already set are kept.
           </p>
         </div>
       </div>
@@ -398,6 +465,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       {/* Block Cards (Blocks Tab) */}
       {activeTab === "blocks" && (
         <div className="mb-6">
+          <BidsByTrade bids={projectBids} />
           <h2 className="text-lg font-semibold mb-4">Blocks Detail</h2>
           <div className="space-y-3">
             {blocks.map((block) => (
@@ -477,6 +545,15 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                         </div>
                       </div>
                     </div>
+
+                    <Attachments
+                      projectId={project.id}
+                      blockId={block.id}
+                      canEdit
+                      title="Block files"
+                      emptyText="No files for this block yet."
+                      className="mb-4"
+                    />
 
                     {/* Actions */}
                     <div className="flex flex-wrap items-center gap-2 mb-4">
@@ -843,6 +920,13 @@ function BlockEditButton({
           <label className="label">Target Completion Date</label>
           <input className="input" type="date" value={editDesiredDate} min={editDesiredStart || undefined} onChange={(e) => setEditDesiredDate(e.target.value)} />
         </div>
+        <DurationHint
+          title={editTitle}
+          tradeType={editTradeType}
+          start={editDesiredStart}
+          finish={editDesiredDate}
+          onApply={setEditDesiredDate}
+        />
         <div>
           <label className="label">Special Requirements</label>
           <input className="input" value={editSpecialReq} onChange={(e) => setEditSpecialReq(e.target.value)} />
@@ -893,5 +977,51 @@ function BidScheduleFit({ block, bid }: { block: Record<string, unknown>; bid: B
         </li>
       ))}
     </ul>
+  );
+}
+
+// One row per trade with every block they bid on in this project, so multi-phase bids read as a package
+function BidsByTrade({ bids }: { bids: Bid[] }) {
+  const active = bids.filter((b) => b.status !== "rejected");
+  const trades: { tradeId: number; name: string; tradeType?: string; rating?: number; bids: Bid[] }[] = [];
+  for (const bid of active) {
+    let t = trades.find((x) => x.tradeId === bid.trade_id);
+    if (!t) {
+      t = { tradeId: bid.trade_id, name: bid.trade_name || "Trade", tradeType: bid.trade_type, rating: bid.trade_rating, bids: [] };
+      trades.push(t);
+    }
+    t.bids.push(bid);
+  }
+  if (trades.length === 0) return null;
+  trades.sort((a, b) => b.bids.length - a.bids.length);
+
+  return (
+    <div className="card mb-6">
+      <h2 className="font-semibold mb-1">Bids by trade</h2>
+      <p className="text-sm text-gray-500 mb-4">Trades that bid on several blocks of this project are grouped together. Award each block from its own bid below.</p>
+      <div className="divide-y divide-gray-100">
+        {trades.map((t) => (
+          <div key={t.tradeId} className="py-3 first:pt-0 last:pb-0">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-medium text-sm">{t.name}</span>
+                {t.tradeType && <span className="text-xs text-gray-400">{t.tradeType}</span>}
+                {!!t.rating && <span className="text-xs text-yellow-600">{t.rating} ★</span>}
+                <span className="text-xs text-gray-500">· {t.bids.length} block{t.bids.length !== 1 ? "s" : ""}</span>
+              </div>
+              <span className="font-semibold text-sm">${t.bids.reduce((sum, b) => sum + b.price, 0).toLocaleString()}</span>
+            </div>
+            <div className="mt-1.5 flex flex-wrap gap-2">
+              {t.bids.map((b) => (
+                <span key={b.id} className="inline-flex items-center gap-1.5 text-xs bg-gray-50 border rounded px-2 py-1">
+                  {b.block_title} · ${b.price.toLocaleString()}
+                  <StatusBadge status={b.status} />
+                </span>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }

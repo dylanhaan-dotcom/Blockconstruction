@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { StatusBadge } from "@/components/StatusBadge";
 import { ScheduleTimeline, TimelineRow } from "@/components/ScheduleTimeline";
+import { Attachments } from "@/components/Attachments";
 import { Bid, ProgressUpdate } from "@/lib/types";
 import {
   ScheduledBlock, bidFinish, checkBidSchedule, expectedFinish, expectedStart, targetWindow,
@@ -270,10 +271,11 @@ export default function TradeBlockDetailPage({ params }: { params: Promise<{ id:
               <StatusBadge status={block.status} />
             </div>
             <div className="flex items-center gap-4 text-sm text-gray-500">
-              <span className="flex items-center gap-1">
+              <Link href={`/trade/projects/${block.project_id}`} className="flex items-center gap-1 hover:text-primary-600">
                 <MapPin className="w-4 h-4" />
                 {block.project_title}
-              </span>
+                <span className="text-primary-600">· View whole project</span>
+              </Link>
               {block.trade_type ? (
                 <span className="badge bg-accent-100 text-accent-700">{block.trade_type}</span>
               ) : null}
@@ -361,6 +363,14 @@ export default function TradeBlockDetailPage({ params }: { params: Promise<{ id:
           </div>
         )}
       </div>
+
+      <Attachments
+        projectId={block.project_id}
+        blockId={block.id}
+        includeProjectFiles
+        title="Plans, photos & specs"
+        className="card mb-6"
+      />
 
       {/* Schedule */}
       <div className="card mb-6">

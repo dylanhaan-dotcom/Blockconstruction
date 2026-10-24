@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query, queryOne, execute } from "@/lib/db";
 import { auth } from "@/lib/auth";
+import { bidFinish } from "@/lib/schedule";
 
 export const dynamic = "force-dynamic";
 
@@ -27,7 +28,9 @@ export async function GET(request: NextRequest) {
       (p.owner_id = ? OR (p.share_token IS NOT NULL AND p.share_token = ?)) as can_see_award,
       (SELECT bi3.id FROM bids bi3 WHERE bi3.block_id = b.id AND bi3.trade_id = ? ORDER BY bi3.created_at DESC LIMIT 1) as my_bid_id,
       (SELECT bi3.status FROM bids bi3 WHERE bi3.block_id = b.id AND bi3.trade_id = ? ORDER BY bi3.created_at DESC LIMIT 1) as my_bid_status,
-      (SELECT bi3.price FROM bids bi3 WHERE bi3.block_id = b.id AND bi3.trade_id = ? ORDER BY bi3.created_at DESC LIMIT 1) as my_bid_price
+      (SELECT bi3.price FROM bids bi3 WHERE bi3.block_id = b.id AND bi3.trade_id = ? ORDER BY bi3.created_at DESC LIMIT 1) as my_bid_price,
+      (SELECT a.start_date FROM bids a WHERE a.block_id = b.id AND a.status IN ('accepted', 'needs_confirmation') LIMIT 1) as scheduled_start,
+      (SELECT a.duration_days FROM bids a WHERE a.block_id = b.id AND a.status IN ('accepted', 'needs_confirmation') LIMIT 1) as scheduled_duration
     FROM blocks b
     JOIN projects p ON b.project_id = p.id
     LEFT JOIN bids bi ON bi.block_id = b.id
@@ -73,6 +76,9 @@ export async function GET(request: NextRequest) {
       block.awarded_price = null;
     }
     delete block.can_see_award;
+    // Accepted bid dates (never price or trade) so a project's whole schedule can be shown
+    block.scheduled_finish = bidFinish(block.scheduled_start, block.scheduled_duration);
+    delete block.scheduled_duration;
 
     const deps = await query(
       "SELECT depends_on_block_id FROM block_dependencies WHERE block_id = ?",

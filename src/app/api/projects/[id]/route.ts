@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { queryOne, execute } from "@/lib/db";
+import { auth } from "@/lib/auth";
 import crypto from "crypto";
 
 export const dynamic = "force-dynamic";
@@ -20,6 +21,11 @@ export async function GET(
   if (!project) {
     return NextResponse.json({ error: "Project not found" }, { status: 404 });
   }
+
+  // The share link is the owner's to hand out
+  const session = await auth();
+  const viewerId = Number((session?.user as Record<string, unknown> | undefined)?.id) || 0;
+  if (viewerId !== Number(project.owner_id)) delete project.share_token;
 
   return NextResponse.json(project);
 }
