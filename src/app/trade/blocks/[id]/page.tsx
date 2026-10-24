@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { StatusBadge } from "@/components/StatusBadge";
 import { ScheduleTimeline, TimelineRow } from "@/components/ScheduleTimeline";
+import { Attachments } from "@/components/Attachments";
 import { Bid, ProgressUpdate } from "@/lib/types";
 import {
   ScheduledBlock, bidFinish, checkBidSchedule, expectedFinish, expectedStart, targetWindow,
@@ -24,6 +25,7 @@ interface BlockDetail {
   description: string | null;
   trade_type: string | null;
   special_requirements: string | null;
+  pending_delay_days: number | null;
   desired_start_date: string | null;
   desired_completion_date: string | null;
   estimated_completion_date: string | null;
@@ -270,10 +272,11 @@ export default function TradeBlockDetailPage({ params }: { params: Promise<{ id:
               <StatusBadge status={block.status} />
             </div>
             <div className="flex items-center gap-4 text-sm text-gray-500">
-              <span className="flex items-center gap-1">
+              <Link href={`/trade/projects/${block.project_id}`} className="flex items-center gap-1 hover:text-primary-600">
                 <MapPin className="w-4 h-4" />
                 {block.project_title}
-              </span>
+                <span className="text-primary-600">· View whole project</span>
+              </Link>
               {block.trade_type ? (
                 <span className="badge bg-accent-100 text-accent-700">{block.trade_type}</span>
               ) : null}
@@ -362,6 +365,14 @@ export default function TradeBlockDetailPage({ params }: { params: Promise<{ id:
         )}
       </div>
 
+      <Attachments
+        projectId={block.project_id}
+        blockId={block.id}
+        includeProjectFiles
+        title="Plans, photos & specs"
+        className="card mb-6"
+      />
+
       {/* Schedule */}
       <div className="card mb-6">
         <div className="flex flex-wrap items-start justify-between gap-2 mb-1">
@@ -387,6 +398,16 @@ export default function TradeBlockDetailPage({ params }: { params: Promise<{ id:
         <ScheduleTimeline rows={timelineRows} />
         {scheduleFeedback && !showBidForm && <div className="mt-4 pt-4 border-t border-gray-100">{scheduleFeedback}</div>}
       </div>
+
+      {isAssignedTrade && block.pending_delay_days != null && (
+        <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-800 flex items-start gap-2">
+          <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+          <span>
+            You reported a delay to {block.estimated_completion_date}. The owner is deciding whether to accept it and shift the
+            downstream schedule, or reopen this block for bids.
+          </span>
+        </div>
+      )}
 
       {/* Action buttons */}
       <div className="flex flex-wrap gap-3 mb-6">
@@ -498,8 +519,8 @@ export default function TradeBlockDetailPage({ params }: { params: Promise<{ id:
               </div>
               {progressStatus === "delayed" && (
                 <div>
-                  <label className="label">New Estimated Completion Date</label>
-                  <input className="input" type="date" value={progressEstDate} onChange={(e) => setProgressEstDate(e.target.value)} />
+                  <label className="label">New Estimated Completion Date *</label>
+                  <input className="input" type="date" value={progressEstDate} onChange={(e) => setProgressEstDate(e.target.value)} required />
                 </div>
               )}
               <div className="sm:col-span-2">
@@ -511,7 +532,7 @@ export default function TradeBlockDetailPage({ params }: { params: Promise<{ id:
               <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg">
                 <p className="text-sm text-amber-800 flex items-center gap-1.5">
                   <AlertTriangle className="w-4 h-4" />
-                  Marking as delayed will automatically notify downstream trades and the project owner.
+                  The project owner will decide whether to accept the new date and shift the downstream blocks, or reopen this block for bids. Downstream trades are told a delay was reported.
                 </p>
               </div>
             )}
@@ -533,7 +554,7 @@ export default function TradeBlockDetailPage({ params }: { params: Promise<{ id:
             <div className="flex-1">
               <h3 className="font-semibold text-amber-800">Schedule Confirmation Required</h3>
               <p className="text-sm text-amber-700 mt-1">
-                An upstream block has been delayed. Please confirm you can still work with the updated schedule, or revise your bid with new terms.
+                An upstream block was delayed and the owner moved your dates to match. Please confirm you can work to the new dates, or revise your bid with new terms for the owner to accept.
               </p>
               {myNeedsConfirmation.map((bid) => (
                 <div key={bid.id} className="mt-3 p-3 bg-white rounded-lg border border-amber-200">

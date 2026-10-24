@@ -21,10 +21,11 @@ export async function GET(request: NextRequest) {
   const blockId = request.nextUrl.searchParams.get("block_id");
   const tradeId = request.nextUrl.searchParams.get("trade_id");
   const status = request.nextUrl.searchParams.get("status");
+  const projectId = request.nextUrl.searchParams.get("project_id");
 
   let sql = `
     SELECT bi.*, u.name as trade_name, u.trade_type, u.rating as trade_rating, u.rating_count as trade_rating_count,
-      b.title as block_title, p.title as project_title
+      b.title as block_title, b.project_id, p.title as project_title
     FROM bids bi
     JOIN users u ON u.id = bi.trade_id
     JOIN blocks b ON b.id = bi.block_id
@@ -45,6 +46,10 @@ export async function GET(request: NextRequest) {
   if (status) {
     conditions.push("bi.status = ?");
     params.push(status);
+  }
+  if (projectId) {
+    conditions.push("p.id = ?");
+    params.push(Number(projectId));
   }
 
   // Trades only see their own bids; owners only see bids on their own projects.

@@ -93,3 +93,19 @@ export function checkBidSchedule(
   }
   return { ok: issues.length === 0, issues };
 }
+
+// Every block that waits on this one, directly or further down the chain
+export function downstreamClosure(blockId: number, blocks: { id: number; dependencies?: number[] }[]): number[] {
+  const found = new Set<number>();
+  const queue = [blockId];
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    for (const b of blocks) {
+      if (!found.has(b.id) && b.id !== blockId && (b.dependencies || []).includes(current)) {
+        found.add(b.id);
+        queue.push(b.id);
+      }
+    }
+  }
+  return Array.from(found);
+}

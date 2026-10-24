@@ -36,6 +36,18 @@ export default function TradeDashboard() {
   }
 
   const activeBids = bids.filter((b) => b.status === "pending");
+
+  // Bids grouped by project so several scopes on one job read as one package
+  const bidGroups: { projectId: number; title: string; bids: typeof bids }[] = [];
+  for (const bid of bids) {
+    const projectId = bid.project_id ?? 0;
+    let group = bidGroups.find((g) => g.projectId === projectId);
+    if (!group) {
+      group = { projectId, title: bid.project_title || "Project", bids: [] };
+      bidGroups.push(group);
+    }
+    group.bids.push(bid);
+  }
   const wonBids = bids.filter((b) => b.status === "accepted");
   const totalEarnings = wonBids.reduce((s, b) => s + b.price, 0);
   const totalAppreciation = appreciations.reduce((s, a) => s + a.amount, 0);
@@ -111,8 +123,19 @@ export default function TradeDashboard() {
               <Link href="/trade/blocks" className="btn-primary btn-sm">Browse Available Blocks</Link>
             </div>
           ) : (
-            <div className="space-y-2">
-              {bids.map((bid) => (
+            <div className="space-y-5">
+              {bidGroups.map((group) => (
+                <div key={group.projectId}>
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <Link href={`/trade/projects/${group.projectId}`} className="text-sm font-semibold text-gray-800 hover:text-primary-600">
+                      {group.title}
+                    </Link>
+                    <span className="text-xs text-gray-500">
+                      {group.bids.length} bid{group.bids.length !== 1 ? "s" : ""} · ${group.bids.reduce((sum, b) => sum + b.price, 0).toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="space-y-2">
+              {group.bids.map((bid) => (
                 <Link
                   key={bid.id}
                   href={`/trade/blocks/${bid.block_id}`}
@@ -121,7 +144,6 @@ export default function TradeDashboard() {
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <p className="font-medium text-sm truncate">{bid.block_title}</p>
-                      <p className="text-xs text-gray-500">{bid.project_title}</p>
                       <div className="flex items-center gap-2 mt-1.5">
                         <StatusBadge status={bid.status} />
                         {bid.is_revision ? (
@@ -132,6 +154,9 @@ export default function TradeDashboard() {
                     <p className="text-lg font-bold text-gray-900 shrink-0">${bid.price.toLocaleString()}</p>
                   </div>
                 </Link>
+              ))}
+                  </div>
+                </div>
               ))}
             </div>
           )}
