@@ -66,6 +66,8 @@ export interface Block {
   my_bid_price?: number | null;
   scheduled_start?: string | null;
   scheduled_finish?: string | null;
+  delay_baseline_date?: string | null;
+  pending_delay_days?: number | null;
 }
 
 export type BidStatus = "pending" | "accepted" | "rejected" | "revised" | "needs_confirmation";

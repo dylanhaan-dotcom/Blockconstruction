@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { query, queryOne, execute } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { bidFinish } from "@/lib/schedule";
+import { requireBlockOwner } from "@/lib/access";
 
 export const dynamic = "force-dynamic";
 
@@ -94,6 +95,9 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
+  const owner = await requireBlockOwner(Number(id));
+  if (owner instanceof NextResponse) return owner;
+
   const body = await request.json();
   const { status, estimated_completion_date, title, description, trade_type, desired_start_date, desired_completion_date, special_requirements, reopen_bids } = body;
 

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { queryOne, execute } from "@/lib/db";
 import { auth } from "@/lib/auth";
+import { requireProjectOwner } from "@/lib/access";
 import crypto from "crypto";
 
 export const dynamic = "force-dynamic";
@@ -35,6 +36,9 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
+  const owner = await requireProjectOwner(Number(id));
+  if (owner instanceof NextResponse) return owner;
+
   const body = await request.json();
   const { title, address, project_type, description, status, budget, allow_parallel_bidding, generate_share_token, open_all_bids } = body;
 

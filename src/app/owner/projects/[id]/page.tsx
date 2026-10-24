@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { StatusBadge } from "@/components/StatusBadge";
 import { TRADE_TYPES } from "@/lib/trades";
-import { ScheduledBlock, bidFinish, checkBidSchedule } from "@/lib/schedule";
+import { ScheduledBlock, addDays, bidFinish, checkBidSchedule, downstreamClosure } from "@/lib/schedule";
 import { GanttChart } from "@/components/GanttChart";
 import { DurationHint } from "@/components/DurationHint";
 import { Attachments } from "@/components/Attachments";
@@ -48,13 +48,18 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       fetch(`/api/appreciation?from_user_id=${currentUser?.id}`).then((r) => r.json()),
       fetch(`/api/bids?project_id=${id}`).then((r) => (r.ok ? r.json() : [])),
     ]).then(([p, b, a, bids]) => {
+      // Owners can only manage their own projects
+      if (!p || p.error || Number(p.owner_id) !== currentUser?.id) {
+        router.push("/owner");
+        return;
+      }
       setProject(p);
       setBlocks(b);
       setAppreciations(a);
       setProjectBids(bids);
       setLoading(false);
     });
-  }, [id, currentUser?.id]);
+  }, [id, currentUser?.id, router]);
 
   useEffect(() => {
     if (sessionLoading) return;
@@ -140,6 +145,18 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     }
     setScheduling(false);
     fetchData();
+  };
+
+  const decideDelay = async (block: Block, action: "shift" | "reopen") => {
+    if (action === "reopen" && !window.confirm(`Reopen "${block.title}" for bids? The current trade's bid goes back to pending and downstream dates stay as they are.`)) return;
+    await fetch(`/api/blocks/${block.id}/delay`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action }),
+    });
+    fetchData();
+    if (expandedBlock) fetchBlockDetail(expandedBlock);
+    refreshNotifications();
   };
 
   const toggleParallelBidding = async () => {
@@ -285,6 +302,66 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
           className="mt-4 pt-4 border-t border-gray-100"
         />
       </div>
+
+      {/* Delays waiting for the owner's decision */}
+      {blocks.filter((b) => b.pending_delay_days != null).map((delayed) => {
+        const days = delayed.pending_delay_days || 0;
+        const affected = downstreamClosure(delayed.id, blocks)
+          .map((dsId) => blocks.find((b) => b.id === dsId))
+          .filter((b): b is Block => !!b && b.status !== "completed");
+        const shift = (d: string | null | undefined) => (d ? addDays(d.slice(0, 10), days) : null);
+        const window = (start: string | null, finish: string | null) =>
+          start && finish ? `${start} → ${finish}` : finish ? `by ${finish}` : start ? `from ${start}` : "no dates set";
+        return (
+          <div key={delayed.id} className="mb-6 p-4 rounded-xl border-2 border-red-200 bg-red-50">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="w-5 h-5 text-red-600 mt-0.5 shrink-0" />
+              <div className="flex-1 min-w-0">
+                <h2 className="font-semibold text-red-800">Delay needs your decision: {delayed.title}</h2>
+                <p className="text-sm text-red-700 mt-1">
+                  {delayed.awarded_trade ? `${delayed.awarded_trade} now expects` : "Now expected"} to finish{" "}
+                  <strong>{delayed.estimated_completion_date}</strong>
+                  {delayed.delay_baseline_date && <> instead of {delayed.delay_baseline_date}</>}
+                  {days > 0 && <> &mdash; <strong>{days} day{days !== 1 ? "s" : ""} late</strong></>}.
+                </p>
+                {affected.length > 0 ? (
+                  <div className="mt-3">
+                    <p className="text-xs font-medium text-red-800 uppercase mb-1">
+                      Accepting moves {affected.length} downstream block{affected.length !== 1 ? "s" : ""} by {days} day{days !== 1 ? "s" : ""}
+                    </p>
+                    <ul className="text-sm text-gray-700 space-y-0.5">
+                      {affected.map((b) => (
+                        <li key={b.id} className="flex flex-wrap gap-x-2">
+                          <span className="font-medium">{b.title}</span>
+                          <span className="text-gray-500">
+                            {window(b.desired_start_date, b.desired_completion_date)}
+                            {days > 0 && (b.desired_start_date || b.desired_completion_date) && (
+                              <> &nbsp;⟶&nbsp; <span className="text-red-700">{window(shift(b.desired_start_date), shift(b.desired_completion_date))}</span></>
+                            )}
+                          </span>
+                          {b.awarded_trade && <span className="text-xs text-gray-500">({b.awarded_trade} will be asked to confirm)</span>}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-600 mt-2">No unfinished blocks depend on this one.</p>
+                )}
+                <div className="flex flex-wrap gap-2 mt-4">
+                  <button onClick={() => decideDelay(delayed, "shift")} className="btn-primary btn-sm">
+                    {affected.length > 0 && days > 0 ? `Accept delay & shift ${affected.length} block${affected.length !== 1 ? "s" : ""}` : "Accept delay"}
+                  </button>
+                  {delayed.status !== "completed" && (
+                    <button onClick={() => decideDelay(delayed, "reopen")} className="btn-secondary btn-sm">
+                      Reopen for bids to stay on schedule
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })}
 
       {/* Project Settings */}
       <div className="card mb-6">
@@ -626,6 +703,14 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                                 </div>
                                 <div className="text-right shrink-0">
                                   <p className="text-lg font-bold text-gray-900">${bid.price.toLocaleString()}</p>
+                                  {bid.status === "needs_confirmation" && !!bid.is_revision && (
+                                    <button
+                                      onClick={() => acceptBid(bid.id)}
+                                      className="btn-primary btn-sm mt-2"
+                                    >
+                                      Accept revised terms
+                                    </button>
+                                  )}
                                   {bid.status === "pending" && block.status !== "awarded" && block.status !== "in_progress" && block.status !== "completed" && (
                                     <button
                                       onClick={() => acceptBid(bid.id)}

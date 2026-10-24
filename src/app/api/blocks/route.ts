@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { query, queryOne, execute } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { bidFinish } from "@/lib/schedule";
+import { requireProjectOwner } from "@/lib/access";
 
 export const dynamic = "force-dynamic";
 
@@ -113,6 +114,16 @@ export async function POST(request: NextRequest) {
   const body = await request.json();
   const { project_id, title, description, trade_type, desired_start_date, desired_completion_date, special_requirements, sort_order, dependencies } = body;
 
+  const owner = await requireProjectOwner(Number(project_id));
+  if (owner instanceof NextResponse) return owner;
+
+  // Dependencies must be blocks of the same project
+  const depIds: number[] = Array.isArray(dependencies) ? dependencies.map(Number) : [];
+  for (const depId of depIds) {
+    const dep = await queryOne("SELECT id FROM blocks WHERE id = ? AND project_id = ?", [depId, Number(project_id)]);
+    if (!dep) return NextResponse.json({ error: "Dependencies must be blocks in this project" }, { status: 400 });
+  }
+
   const result = await execute(
     `INSERT INTO blocks (project_id, title, description, trade_type, desired_start_date, desired_completion_date, special_requirements, sort_order)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -121,8 +132,8 @@ export async function POST(request: NextRequest) {
 
   const blockId = result.lastInsertRowid!;
 
-  if (dependencies && dependencies.length > 0) {
-    for (const depId of dependencies) {
+  if (depIds.length > 0) {
+    for (const depId of depIds) {
       await execute(
         "INSERT INTO block_dependencies (block_id, depends_on_block_id) VALUES (?, ?)",
         [blockId, depId]
