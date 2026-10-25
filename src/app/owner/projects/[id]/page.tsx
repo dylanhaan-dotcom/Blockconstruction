@@ -6,11 +6,12 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { StatusBadge } from "@/components/StatusBadge";
 import { TRADE_TYPES } from "@/lib/trades";
-import { ScheduledBlock, addDays, bidFinish, checkBidSchedule, downstreamClosure } from "@/lib/schedule";
+import { ScheduledBlock, addDays, bidFinish, checkBidSchedule, daysBetween, downstreamClosure, expectedFinish } from "@/lib/schedule";
 import { GanttChart } from "@/components/GanttChart";
 import { DurationHint } from "@/components/DurationHint";
 import { Attachments } from "@/components/Attachments";
-import { suggestSchedule } from "@/lib/durations";
+import { alignToDependencies, earliestStart, suggestSchedule } from "@/lib/durations";
+import { Scale, projectScale } from "@/lib/benchmarks";
 import { Block, Bid, Project, Appreciation, ProgressUpdate } from "@/lib/types";
 import {
   ArrowLeft, ChevronDown, ChevronUp, DollarSign, Heart,
@@ -123,16 +124,20 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     if (!scheduleStart) return;
     setScheduling(true);
     const indexById = new Map(blocks.map((b, i) => [b.id, i]));
-    const suggested = suggestSchedule(
-      blocks.map((b) => ({
+    const scale = projectScale(project?.project_type, project?.title);
+    const schedulable = blocks.map((b) => ({
         title: b.title,
         trade_type: b.trade_type,
         depends_on: (b.dependencies || []).map((d) => indexById.get(d)).filter((i): i is number => i !== undefined),
         start: b.desired_start_date,
         finish: b.desired_completion_date || b.actual_completion_date?.slice(0, 10) || null,
-      })),
-      scheduleStart
-    );
+      }));
+    const filled = suggestSchedule(schedulable, scheduleStart, scale);
+    // Then move any block that would start before its dependencies finish
+    const suggested = alignToDependencies(
+      schedulable.map((b, i) => ({ ...b, start: filled[i].start, finish: filled[i].finish })),
+      scale
+    ).map((d, i) => ({ start: d.start || filled[i].start, finish: d.finish || filled[i].finish }));
     for (let i = 0; i < blocks.length; i++) {
       const b = blocks[i];
       if (b.status === "completed") continue;
@@ -398,11 +403,12 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
               disabled={!scheduleStart || scheduling}
               className="btn-secondary btn-sm"
             >
-              {scheduling ? "Filling dates..." : "Fill empty target dates"}
+              {scheduling ? "Updating dates..." : "Fill & align target dates"}
             </button>
           </div>
           <p className="text-xs text-gray-500 mt-2">
-            Uses typical job lengths and your block dependencies, starting from this date. Dates you&apos;ve already set are kept.
+            Fills empty dates with typical job lengths from published benchmarks, starting from this date, and moves any block
+            that would start before its dependencies finish. Other dates you&apos;ve set are kept.
           </p>
         </div>
       </div>
@@ -640,7 +646,13 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                         </button>
                       )}
                       {block.status !== "completed" && (
-                        <BlockEditButton block={block} blockDetail={blockDetail} onSave={saveBlockEdit} />
+                        <BlockEditButton
+                          block={block}
+                          blockDetail={blockDetail}
+                          onSave={saveBlockEdit}
+                          scale={projectScale(project.project_type, project.title)}
+                          budget={project.budget}
+                        />
                       )}
                     </div>
                     {!block.depends_on_completed && block.status !== "completed" && (
@@ -926,10 +938,14 @@ function BlockEditButton({
   block,
   blockDetail,
   onSave,
+  scale,
+  budget,
 }: {
   block: Block;
   blockDetail: Record<string, unknown>;
   onSave: (blockId: number, updates: Record<string, unknown>, reopenBids?: boolean) => Promise<void>;
+  scale: Scale;
+  budget: number | null;
 }) {
   const [editing, setEditing] = useState(false);
   const [editTitle, setEditTitle] = useState(block.title);
@@ -1005,12 +1021,40 @@ function BlockEditButton({
           <label className="label">Target Completion Date</label>
           <input className="input" type="date" value={editDesiredDate} min={editDesiredStart || undefined} onChange={(e) => setEditDesiredDate(e.target.value)} />
         </div>
+        {(() => {
+          const deps = (blockDetail.dependency_blocks as ScheduledBlock[]) || [];
+          const earliest = earliestStart(deps.map(expectedFinish));
+          if (!earliest) return null;
+          const tooEarly = !!editDesiredStart && editDesiredStart < earliest;
+          return (
+            <p className={`sm:col-span-2 -mt-1 text-xs ${tooEarly ? "text-amber-700" : "text-primary-700"}`}>
+              Earliest start {earliest}: the day after {deps.map((d) => d.title).join(", ")} {deps.length === 1 ? "is" : "are"} expected to finish.
+              {editDesiredStart !== earliest && (
+                <button
+                  type="button"
+                  className="ml-2 text-primary-600 hover:underline"
+                  onClick={() => {
+                    // Keep the block's length when moving its start
+                    const length = editDesiredStart && editDesiredDate && editDesiredDate >= editDesiredStart
+                      ? daysBetween(editDesiredStart, editDesiredDate) : null;
+                    setEditDesiredStart(earliest);
+                    if (length !== null) setEditDesiredDate(addDays(earliest, length));
+                  }}
+                >
+                  Start then
+                </button>
+              )}
+            </p>
+          );
+        })()}
         <DurationHint
           title={editTitle}
           tradeType={editTradeType}
           start={editDesiredStart}
           finish={editDesiredDate}
           onApply={setEditDesiredDate}
+          scale={scale}
+          budget={budget}
         />
         <div>
           <label className="label">Special Requirements</label>

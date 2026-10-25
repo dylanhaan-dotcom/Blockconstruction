@@ -3,8 +3,10 @@
 import React, { useEffect, useState } from "react";
 import { useApp } from "@/lib/context";
 import { TRADE_TYPES } from "@/lib/trades";
-import { suggestSchedule } from "@/lib/durations";
-import { DurationHint } from "@/components/DurationHint";
+import { alignToDependencies, earliestStart, suggestSchedule } from "@/lib/durations";
+import { DurationHint, SourceLink } from "@/components/DurationHint";
+import { formatMoney, projectBenchmark, projectScale } from "@/lib/benchmarks";
+import { daysBetween } from "@/lib/schedule";
 import { useRouter } from "next/navigation";
 import { ProjectTemplate } from "@/lib/types";
 import { ArrowLeft, Plus, Trash2, FileText, CalendarCheck } from "lucide-react";
@@ -66,11 +68,33 @@ export default function NewProjectPage() {
     ]);
   };
 
+  const scale = projectScale(projectType, title);
+
+  // Dates follow dependencies: a block can't start until the latest of its dependencies finishes
+  const withAlignedDates = (list: BlockForm[]) => {
+    const aligned = alignToDependencies(
+      list.map((b) => ({
+        title: b.title,
+        trade_type: b.trade_type || null,
+        depends_on: b.depends_on,
+        start: b.desired_start_date || null,
+        finish: b.desired_completion_date || null,
+      })),
+      scale
+    );
+    return list.map((b, i) => ({
+      ...b,
+      desired_start_date: aligned[i].start || "",
+      desired_completion_date: aligned[i].finish || "",
+    }));
+  };
+
   const updateBlock = (index: number, field: keyof BlockForm, value: string | number[]) => {
-    const updated = [...blocks];
+    const updated = blocks.map((b) => ({ ...b }));
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (updated[index] as any)[field] = value;
-    setBlocks(updated);
+    const affectsDates = field === "depends_on" || field === "desired_start_date" || field === "desired_completion_date";
+    setBlocks(affectsDates ? withAlignedDates(updated) : updated);
   };
 
   // Fill empty target dates from typical durations, chained through dependencies
@@ -84,13 +108,14 @@ export default function NewProjectPage() {
         start: b.desired_start_date || null,
         finish: b.desired_completion_date || null,
       })),
-      projectStart
+      projectStart,
+      scale
     );
-    setBlocks(blocks.map((b, i) => ({
+    setBlocks(withAlignedDates(blocks.map((b, i) => ({
       ...b,
       desired_start_date: suggested[i].start,
       desired_completion_date: suggested[i].finish,
-    })));
+    }))));
   };
 
   const removeBlock = (index: number) => {
@@ -255,6 +280,7 @@ export default function NewProjectPage() {
                 Fills in empty target dates using typical job lengths, starting each block after the blocks it depends on.
                 Dates you&apos;ve already set are kept, and you can change any date afterwards.
               </p>
+              <PlanSummary blocks={blocks} projectType={projectType} title={title} budget={budget ? Number(budget) : null} />
             </div>
           )}
 
@@ -332,12 +358,23 @@ export default function NewProjectPage() {
                         onChange={(e) => updateBlock(index, "desired_completion_date", e.target.value)}
                       />
                     </div>
+                    {block.depends_on.length > 0 && (() => {
+                      const earliest = earliestStart(block.depends_on.map((d) => blocks[d]?.desired_completion_date));
+                      return earliest ? (
+                        <p className="sm:col-span-2 -mt-1 text-xs text-primary-700">
+                          Earliest start {earliest}: the day after {block.depends_on.map((d) => `#${d + 1}`).join(", ")} finish{block.depends_on.length === 1 ? "es" : ""}.
+                          Changing a dependency&apos;s dates moves this block too.
+                        </p>
+                      ) : null;
+                    })()}
                     <DurationHint
                       title={block.title}
                       tradeType={block.trade_type}
                       start={block.desired_start_date}
                       finish={block.desired_completion_date}
                       onApply={(finish) => updateBlock(index, "desired_completion_date", finish)}
+                      scale={scale}
+                      budget={budget ? Number(budget) : null}
                     />
                     <div>
                       <label className="label">Dependencies</label>
@@ -392,3 +429,42 @@ export default function NewProjectPage() {
   );
 }
 
+// The plan's overall length next to the published benchmark for this kind of project
+function PlanSummary({
+  blocks, projectType, title, budget,
+}: {
+  blocks: BlockForm[];
+  projectType: string;
+  title: string;
+  budget: number | null;
+}) {
+  const starts = blocks.map((b) => b.desired_start_date).filter(Boolean).sort();
+  const finishes = blocks.map((b) => b.desired_completion_date).filter(Boolean).sort();
+  const benchmark = projectBenchmark(projectScale(projectType, title), projectType);
+  const span = starts.length && finishes.length ? daysBetween(starts[0], finishes[finishes.length - 1]) + 1 : null;
+
+  return (
+    <div className="mt-3 pt-3 border-t border-primary-100 text-sm space-y-1">
+      {span !== null && (
+        <p className="text-gray-800">
+          This plan runs <strong>{starts[0]} → {finishes[finishes.length - 1]}</strong>: {span} days
+          {span >= 60 ? ` (about ${(span / 30.4).toFixed(1)} months)` : span >= 14 ? ` (about ${Math.round(span / 7)} weeks)` : ""}.
+        </p>
+      )}
+      <p className="text-gray-600">
+        Benchmark: {benchmark.summary}{" "}
+        <span className="text-xs">(<SourceLink source={benchmark.source} />)</span>
+      </p>
+      {benchmark.cost && (
+        <p className="text-gray-600">
+          Typical cost: {formatMoney(benchmark.cost.low)}–{formatMoney(benchmark.cost.high)}
+          {budget ? (budget < benchmark.cost.low ? " — your budget is below this range." : budget > benchmark.cost.high ? " — your budget is above this range." : " — your budget is within this range.") : "."}{" "}
+          <span className="text-xs">(<SourceLink source={benchmark.cost.source} />)</span>
+        </p>
+      )}
+      <p className="text-xs text-gray-500">
+        These are national averages from published sources until we have enough completed projects to use our own numbers.
+      </p>
+    </div>
+  );
+}

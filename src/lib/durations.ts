@@ -1,47 +1,9 @@
 import { addDays } from "./schedule";
+import { Scale, benchmarkFor } from "./benchmarks";
 
-// Rough job lengths in calendar days to give owners a starting point; real jobs vary.
-const KEYWORD_DAYS: [RegExp, number][] = [
-  [/inspection|punch/i, 2],
-  [/fixture|trim[- ]?out|finish work|electrical finish|plumbing finish/i, 2],
-  [/rough[- ]?in/i, 4],
-  [/demo/i, 3],
-  [/framing|frame/i, 5],
-  [/insulat/i, 2],
-  [/drywall/i, 5],
-  [/cabinet/i, 5],
-  [/counter/i, 7],
-  [/backsplash/i, 3],
-  [/shower|tub/i, 5],
-  [/tile/i, 4],
-  [/floor/i, 4],
-  [/paint/i, 4],
-  [/roof/i, 4],
-  [/window|door/i, 3],
-  [/foundation|concrete|slab/i, 5],
-  [/landscap|grading/i, 5],
-  [/hvac|duct/i, 4],
-];
-
-const TRADE_DAYS: Record<string, number> = {
-  Electrician: 3,
-  Plumber: 3,
-  Carpenter: 5,
-  "Tile Installer": 4,
-  Painter: 4,
-  HVAC: 4,
-  Roofer: 4,
-  Mason: 5,
-  Concrete: 5,
-  Landscaper: 5,
-  "General Contractor": 5,
-};
-
-export function typicalDays(title: string | null | undefined, tradeType: string | null | undefined): number {
-  for (const [pattern, days] of KEYWORD_DAYS) {
-    if (title && pattern.test(title)) return days;
-  }
-  return (tradeType && TRADE_DAYS[tradeType]) || 5;
+// Typical length of a block, from the published benchmarks in ./benchmarks
+export function typicalDays(title: string | null | undefined, tradeType: string | null | undefined, scale: Scale = "remodel"): number {
+  return benchmarkFor(title, tradeType, scale).days;
 }
 
 export interface SchedulableBlock {
@@ -54,7 +16,7 @@ export interface SchedulableBlock {
 
 // Fills in missing target dates: each block starts the day after its latest dependency finishes
 // (or on the project start) and runs for its typical duration. Dates already set are kept.
-export function suggestSchedule(blocks: SchedulableBlock[], projectStart: string) {
+export function suggestSchedule(blocks: SchedulableBlock[], projectStart: string, scale: Scale = "remodel") {
   const result: { start: string; finish: string }[] = [];
   const visiting = new Set<number>();
 
@@ -71,7 +33,7 @@ export function suggestSchedule(blocks: SchedulableBlock[], projectStart: string
       }
       visiting.delete(i);
     }
-    const days = typicalDays(b.title, b.trade_type);
+    const days = typicalDays(b.title, b.trade_type, scale);
     const start = b.start || (b.finish ? addDays(b.finish, -(days - 1)) : earliest);
     const finish = b.finish || addDays(start, days - 1);
     result[i] = { start, finish };
@@ -80,4 +42,48 @@ export function suggestSchedule(blocks: SchedulableBlock[], projectStart: string
 
   blocks.forEach((_, i) => place(i));
   return result;
+}
+
+// Keeps each block from starting before its dependencies finish: a block whose start is empty or
+// earlier than the day after its latest dependency's finish moves to that day, keeping its length
+// (or its typical length when it had none). Later starts are left alone, so owners can add slack.
+export function alignToDependencies(blocks: SchedulableBlock[], scale: Scale = "remodel") {
+  const result = blocks.map((b) => ({ start: b.start, finish: b.finish }));
+  const done = new Set<number>();
+  const visiting = new Set<number>();
+
+  const align = (i: number) => {
+    if (done.has(i) || visiting.has(i)) return; // visiting guards against dependency cycles
+    visiting.add(i);
+    const b = blocks[i];
+    let required: string | null = null;
+    for (const d of b.depends_on) {
+      if (d === i || !blocks[d]) continue;
+      align(d);
+      const depFinish = result[d].finish;
+      if (depFinish) {
+        const next = addDays(depFinish, 1);
+        if (!required || next > required) required = next;
+      }
+    }
+    const current = result[i];
+    if (required && (!current.start || current.start < required)) {
+      const length =
+        current.start && current.finish && current.finish >= current.start
+          ? Math.round((Date.parse(current.finish) - Date.parse(current.start)) / 86400000) + 1
+          : typicalDays(b.title, b.trade_type, scale);
+      result[i] = { start: required, finish: addDays(required, length - 1) };
+    }
+    visiting.delete(i);
+    done.add(i);
+  };
+
+  blocks.forEach((_, i) => align(i));
+  return result;
+}
+
+// The earliest a block can start: the day after its latest dependency finishes
+export function earliestStart(dependencyFinishes: (string | null | undefined)[]): string | null {
+  const finishes = dependencyFinishes.filter((d): d is string => !!d).map((d) => d.slice(0, 10)).sort();
+  return finishes.length ? addDays(finishes[finishes.length - 1], 1) : null;
 }

@@ -7,12 +7,12 @@ import Link from "next/link";
 import { StatusBadge } from "@/components/StatusBadge";
 import { ScheduleTimeline, TimelineRow } from "@/components/ScheduleTimeline";
 import { Attachments } from "@/components/Attachments";
-import { Bid, ProgressUpdate } from "@/lib/types";
+import { Bid, Block, ProgressUpdate } from "@/lib/types";
 import {
   ScheduledBlock, bidFinish, checkBidSchedule, expectedFinish, expectedStart, targetWindow,
 } from "@/lib/schedule";
 import {
-  ArrowLeft, MapPin, Calendar, Clock, CheckCircle2,
+  ArrowLeft, MapPin, Calendar, Clock, CheckCircle2, ChevronLeft, ChevronRight, Layers,
   AlertTriangle, Send, ArrowRight, ClipboardEdit, Pencil, CalendarCheck
 } from "lucide-react";
 
@@ -69,10 +69,20 @@ export default function TradeBlockDetailPage({ params }: { params: Promise<{ id:
   const [progressNotes, setProgressNotes] = useState("");
   const [progressEstDate, setProgressEstDate] = useState("");
 
+  const [projectBlocks, setProjectBlocks] = useState<Block[]>([]);
+  const [justSubmitted, setJustSubmitted] = useState<string | null>(null);
+
   const fetchBlock = useCallback(() => {
     fetch(`/api/blocks/${id}`).then((r) => r.json()).then((data) => {
       setBlock(data);
       setLoading(false);
+      // The rest of the project, so the trade can move through it without leaving this page
+      if (data?.project_id) {
+        fetch(`/api/blocks?project_id=${data.project_id}`)
+          .then((r) => (r.ok ? r.json() : []))
+          .then(setProjectBlocks)
+          .catch(() => {});
+      }
     });
   }, [id]);
 
@@ -87,6 +97,14 @@ export default function TradeBlockDetailPage({ params }: { params: Promise<{ id:
     setBidLicense(currentUser.license_info || "");
     setBidInsurance(currentUser.insurance_info || "");
   }, [currentUser, router, fetchBlock]);
+
+  // Moving to another block in the project starts fresh
+  useEffect(() => {
+    setJustSubmitted(null);
+    setShowBidForm(false);
+    setShowProgressForm(false);
+    setRevisingBidId(null);
+  }, [id]);
 
   // Fill the bid's dates with the owner's target window
   const matchOwnerSchedule = () => {
@@ -136,18 +154,20 @@ export default function TradeBlockDetailPage({ params }: { params: Promise<{ id:
     };
 
     // A revision edits the existing bid in place instead of creating a new one
-    if (revisingBidId) {
-      await fetch(`/api/bids/${revisingBidId}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...terms, revision_reason: revisionReason || null }),
-      });
-    } else {
-      await fetch("/api/bids", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...terms, block_id: Number(id) }),
-      });
+    const res = revisingBidId
+      ? await fetch(`/api/bids/${revisingBidId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...terms, revision_reason: revisionReason || null }),
+        })
+      : await fetch("/api/bids", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...terms, block_id: Number(id) }),
+        });
+    if (res.ok) {
+      setJustSubmitted(revisingBidId ? "Bid updated" : "Bid submitted");
+      window.scrollTo({ top: 0, behavior: "smooth" });
     }
 
     setShowBidForm(false);
@@ -256,12 +276,69 @@ export default function TradeBlockDetailPage({ params }: { params: Promise<{ id:
     )
   );
 
+  // Moving through the project: blocks still open for bids (or with the trade's bid still in play), in project order
+  const navBlocks = projectBlocks.filter((b) =>
+    b.id === block.id || b.status === "open_for_bids" || b.my_bid_status === "pending" || b.my_bid_status === "needs_confirmation"
+  );
+  const navIndex = navBlocks.findIndex((b) => b.id === block.id);
+  const prevBlock = navIndex > 0 ? navBlocks[navIndex - 1] : null;
+  const nextBlock = navIndex >= 0 && navIndex < navBlocks.length - 1 ? navBlocks[navIndex + 1] : null;
+  // After bidding, suggest the next open block without a bid, wrapping around to the start of the project
+  const ordered = [...navBlocks.slice(navIndex + 1), ...navBlocks.slice(0, Math.max(navIndex, 0))];
+  const nextToBid = ordered.find((b) => b.status === "open_for_bids" && !b.my_bid_id) || null;
+  const remainingOpen = projectBlocks.filter((b) => b.id !== block.id && b.status === "open_for_bids" && !b.my_bid_id).length;
+
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 py-6">
-      <Link href="/trade/blocks" className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 mb-4">
-        <ArrowLeft className="w-4 h-4" />
-        Back to Blocks
-      </Link>
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <nav className="flex items-center gap-1.5 text-sm text-gray-500 min-w-0">
+          <Link href="/trade/blocks" className="inline-flex items-center gap-1 hover:text-gray-700 shrink-0">
+            <ArrowLeft className="w-4 h-4" />
+            Browse Blocks
+          </Link>
+          <span>/</span>
+          <Link href={`/trade/projects/${block.project_id}`} className="hover:text-gray-700 truncate">
+            {block.project_title}
+          </Link>
+        </nav>
+        {navBlocks.length > 1 && (
+          <div className="flex items-center gap-2 text-sm">
+            <span className="text-gray-400">
+              {navIndex + 1} of {navBlocks.length} open in this project
+            </span>
+            {prevBlock ? (
+              <Link href={`/trade/blocks/${prevBlock.id}`} className="btn-secondary btn-sm flex items-center gap-1" title={prevBlock.title}>
+                <ChevronLeft className="w-4 h-4" /> Previous
+              </Link>
+            ) : null}
+            {nextBlock ? (
+              <Link href={`/trade/blocks/${nextBlock.id}`} className="btn-secondary btn-sm flex items-center gap-1" title={nextBlock.title}>
+                Next <ChevronRight className="w-4 h-4" />
+              </Link>
+            ) : null}
+          </div>
+        )}
+      </div>
+
+      {justSubmitted && (
+        <div className="mb-6 p-4 rounded-xl border border-green-200 bg-green-50 flex flex-wrap items-center justify-between gap-3">
+          <p className="text-sm text-green-800 flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4" />
+            {justSubmitted} for &ldquo;{block.title}&rdquo;.
+            {remainingOpen > 0
+              ? ` ${remainingOpen} more open block${remainingOpen !== 1 ? "s" : ""} in this project.`
+              : " You've bid on every open block in this project."}
+          </p>
+          <div className="flex items-center gap-2">
+            <Link href={`/trade/projects/${block.project_id}`} className="btn-secondary btn-sm">Whole project</Link>
+            {nextToBid && (
+              <Link href={`/trade/blocks/${nextToBid.id}`} className="btn-primary btn-sm flex items-center gap-1">
+                Next: {nextToBid.title} <ChevronRight className="w-4 h-4" />
+              </Link>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Block Header */}
       <div className="card mb-6">
@@ -634,6 +711,48 @@ export default function TradeBlockDetailPage({ params }: { params: Promise<{ id:
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* The rest of the project */}
+      {projectBlocks.length > 1 && (
+        <div className="card mb-6">
+          <div className="flex items-center justify-between gap-2 mb-3">
+            <h2 className="font-semibold flex items-center gap-2">
+              <Layers className="w-4 h-4 text-primary-600" />
+              In this project
+            </h2>
+            <Link href={`/trade/projects/${block.project_id}`} className="text-sm text-primary-600 hover:underline">
+              Bid on several at once
+            </Link>
+          </div>
+          <ul className="divide-y divide-gray-100">
+            {projectBlocks.map((b) => {
+              const isCurrent = b.id === block.id;
+              return (
+                <li key={b.id}>
+                  <Link
+                    href={`/trade/blocks/${b.id}`}
+                    className={`flex flex-wrap items-center justify-between gap-2 py-2 px-2 -mx-2 rounded-lg ${isCurrent ? "bg-primary-50" : "hover:bg-gray-50"}`}
+                  >
+                    <span className={`text-sm ${isCurrent ? "font-semibold text-primary-700" : "text-gray-800"}`}>
+                      {b.title}
+                      {b.trade_type && <span className="text-xs text-gray-400 ml-2">{b.trade_type}</span>}
+                    </span>
+                    <span className="flex items-center gap-2">
+                      {b.my_bid_id && b.my_bid_status ? (
+                        <span className="text-xs text-primary-700 flex items-center gap-1">
+                          You bid {b.my_bid_price != null ? `$${b.my_bid_price.toLocaleString()}` : ""} <StatusBadge status={b.my_bid_status} />
+                        </span>
+                      ) : (
+                        <StatusBadge status={b.status} />
+                      )}
+                    </span>
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
         </div>
       )}
 
