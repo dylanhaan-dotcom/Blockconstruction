@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Project, Appreciation } from "@/lib/types";
-import { Plus, FolderOpen, DollarSign, CheckCircle2, Clock, Heart } from "lucide-react";
+import { Plus, FolderOpen, DollarSign, CheckCircle2, Clock, Heart, AlertTriangle } from "lucide-react";
 
 export default function OwnerDashboard() {
   const { currentUser, loading: sessionLoading } = useApp();
@@ -128,6 +128,22 @@ export default function OwnerDashboard() {
                 <StatusBadge status={project.status} />
               </div>
               <p className="text-sm text-gray-500 mb-3">{project.address}</p>
+              {(!!project.delays_to_decide || !!project.awaiting_confirmations) && (
+                <div className="mb-3 space-y-1.5">
+                  {!!project.delays_to_decide && (
+                    <p className="flex items-center gap-1.5 text-xs font-medium text-red-700 bg-red-50 border border-red-200 rounded-lg px-2.5 py-1.5">
+                      <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                      {project.delays_to_decide} schedule delay{project.delays_to_decide !== 1 ? "s" : ""} need{project.delays_to_decide === 1 ? "s" : ""} your decision
+                    </p>
+                  )}
+                  {!!project.awaiting_confirmations && (
+                    <p className="flex items-center gap-1.5 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5">
+                      <Clock className="w-3.5 h-3.5 shrink-0" />
+                      Waiting on {project.awaiting_confirmations} trade{project.awaiting_confirmations !== 1 ? "s" : ""} to confirm new dates
+                    </p>
+                  )}
+                </div>
+              )}
               <div className="flex items-center gap-4 text-sm text-gray-600">
                 <span>{project.block_count} blocks</span>
                 <span>{project.completed_blocks} completed</span>

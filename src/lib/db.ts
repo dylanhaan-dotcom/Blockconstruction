@@ -137,6 +137,7 @@ async function initializeSchema(db: Client) {
   // A reported delay waiting for the owner's decision: the finish date before the delay and the days lost
   await addColumnIfMissing(db, "blocks", "delay_baseline_date", "TEXT");
   await addColumnIfMissing(db, "blocks", "pending_delay_days", "INTEGER");
+  await addColumnIfMissing(db, "blocks", "pending_delay_reason", "TEXT");
 }
 
 async function addColumnIfMissing(db: Client, table: string, column: string, type: string) {

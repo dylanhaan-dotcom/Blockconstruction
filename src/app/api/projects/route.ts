@@ -41,7 +41,10 @@ export async function GET(request: NextRequest) {
       u.name as owner_name,
       COUNT(DISTINCT b.id) as block_count,
       COUNT(DISTINCT CASE WHEN b.status = 'completed' THEN b.id END) as completed_blocks,
-      COALESCE(SUM(CASE WHEN bi.status = 'accepted' THEN bi.price ELSE 0 END), 0) as total_awarded
+      COALESCE(SUM(CASE WHEN bi.status = 'accepted' THEN bi.price ELSE 0 END), 0) as total_awarded,
+      (SELECT COUNT(*) FROM blocks d WHERE d.project_id = p.id AND d.pending_delay_days IS NOT NULL) as delays_to_decide,
+      (SELECT COUNT(*) FROM bids c JOIN blocks cb ON cb.id = c.block_id
+        WHERE cb.project_id = p.id AND c.status = 'needs_confirmation' AND cb.pending_delay_days IS NULL) as awaiting_confirmations
     FROM projects p
     JOIN users u ON p.owner_id = u.id
     LEFT JOIN blocks b ON b.project_id = p.id

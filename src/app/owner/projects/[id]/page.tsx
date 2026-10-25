@@ -322,13 +322,20 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
             <div className="flex items-start gap-3">
               <AlertTriangle className="w-5 h-5 text-red-600 mt-0.5 shrink-0" />
               <div className="flex-1 min-w-0">
-                <h2 className="font-semibold text-red-800">Delay needs your decision: {delayed.title}</h2>
+                <h2 className="font-semibold text-red-800">
+                  {delayed.status === "delayed" ? "Delay needs your decision" : "New dates need your decision"}: {delayed.title}
+                </h2>
                 <p className="text-sm text-red-700 mt-1">
-                  {delayed.awarded_trade ? `${delayed.awarded_trade} now expects` : "Now expected"} to finish{" "}
+                  {delayed.status === "delayed"
+                    ? <>{delayed.awarded_trade || "The trade"} confirmed a delay and now expects to finish </>
+                    : <>{delayed.awarded_trade || "The trade"} can&apos;t make the shifted dates and proposes finishing </>}
                   <strong>{delayed.estimated_completion_date}</strong>
                   {delayed.delay_baseline_date && <> instead of {delayed.delay_baseline_date}</>}
                   {days > 0 && <> &mdash; <strong>{days} day{days !== 1 ? "s" : ""} late</strong></>}.
                 </p>
+                {delayed.pending_delay_reason && (
+                  <p className="text-sm text-gray-700 mt-1 italic">&ldquo;{delayed.pending_delay_reason}&rdquo;</p>
+                )}
                 {affected.length > 0 ? (
                   <div className="mt-3">
                     <p className="text-xs font-medium text-red-800 uppercase mb-1">
@@ -354,11 +361,13 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                 )}
                 <div className="flex flex-wrap gap-2 mt-4">
                   <button onClick={() => decideDelay(delayed, "shift")} className="btn-primary btn-sm">
-                    {affected.length > 0 && days > 0 ? `Accept delay & shift ${affected.length} block${affected.length !== 1 ? "s" : ""}` : "Accept delay"}
+                    {affected.length > 0 && days > 0
+                      ? `Accept new date & move ${affected.length} later block${affected.length !== 1 ? "s" : ""}`
+                      : "Accept new date"}
                   </button>
                   {delayed.status !== "completed" && (
                     <button onClick={() => decideDelay(delayed, "reopen")} className="btn-secondary btn-sm">
-                      Reopen for bids to stay on schedule
+                      Reopen for bids instead
                     </button>
                   )}
                 </div>
@@ -367,6 +376,34 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
           </div>
         );
       })}
+
+      {/* Shifted dates the downstream trades haven't answered yet */}
+      {(() => {
+        // Proposals already waiting on the owner show in the decision banner instead
+        const waiting = projectBids.filter((bid) =>
+          bid.status === "needs_confirmation" && blocks.find((b) => b.id === bid.block_id)?.pending_delay_days == null
+        );
+        if (waiting.length === 0) return null;
+        return (
+          <div className="mb-6 p-4 rounded-xl border border-amber-200 bg-amber-50">
+            <h2 className="font-semibold text-amber-900 flex items-center gap-2">
+              <Clock className="w-4 h-4" />
+              Waiting on {waiting.length} trade{waiting.length !== 1 ? "s" : ""} to confirm new dates
+            </h2>
+            <p className="text-sm text-amber-800 mt-1">
+              Each trade either confirms or proposes dates they can make; a proposal comes back to you to accept or reopen for bids.
+            </p>
+            <ul className="mt-2 text-sm text-gray-700 space-y-0.5">
+              {waiting.map((bid) => (
+                <li key={bid.id}>
+                  <span className="font-medium">{bid.block_title}</span> &middot; {bid.trade_name}
+                  {bid.start_date && <span className="text-gray-500"> &middot; new start {bid.start_date}</span>}
+                </li>
+              ))}
+            </ul>
+          </div>
+        );
+      })()}
 
       {/* Project Settings */}
       <div className="card mb-6">

@@ -97,13 +97,19 @@ export async function POST(
 
     await execute(
       `UPDATE blocks SET status = CASE WHEN status = 'delayed' THEN 'in_progress' ELSE status END,
-         delay_baseline_date = NULL, pending_delay_days = NULL, updated_at = datetime('now') WHERE id = ?`,
+         delay_baseline_date = NULL, pending_delay_days = NULL, pending_delay_reason = NULL, updated_at = datetime('now') WHERE id = ?`,
       [blockId]
     );
     if (assigned) {
+      // A downstream trade's proposed dates are now the agreed dates
+      await execute(
+        "UPDATE bids SET status = 'accepted', delay_confirmed = 1, updated_at = datetime('now') WHERE id = ? AND status = 'needs_confirmation'",
+        [Number(assigned.id)]
+      );
       await notify(
-        Number(assigned.trade_id), "delay_accepted", "Delay accepted",
-        `The owner accepted the new finish date for "${title}" (${block.estimated_completion_date}).`,
+        Number(assigned.trade_id), "delay_accepted", "New date accepted",
+        `The owner accepted your new finish date for "${title}" (${block.estimated_completion_date}).` +
+          (shifted ? ` ${shifted} later block${shifted !== 1 ? "s were" : " was"} moved to match.` : ""),
         projectId, blockId
       );
     }
@@ -111,7 +117,7 @@ export async function POST(
     // Back to bidding with the original dates; the current trade's bid stays in the running
     await execute(
       `UPDATE blocks SET status = 'open_for_bids', estimated_completion_date = NULL,
-         delay_baseline_date = NULL, pending_delay_days = NULL, updated_at = datetime('now') WHERE id = ?`,
+         delay_baseline_date = NULL, pending_delay_days = NULL, pending_delay_reason = NULL, updated_at = datetime('now') WHERE id = ?`,
       [blockId]
     );
     if (assigned) {
