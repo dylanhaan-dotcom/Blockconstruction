@@ -18,7 +18,8 @@ export default function BrowseBlocksPage() {
   const router = useRouter();
   const [blocks, setBlocks] = useState<Block[]>([]);
   const [loading, setLoading] = useState(true);
-  const [tradeTypeFilter, setTradeTypeFilter] = useState(MY_TRADES);
+  // Default: every block open for bids; "My trades" narrows it down
+  const [tradeTypeFilter, setTradeTypeFilter] = useState("");
   const [bidFilter, setBidFilter] = useState<BidFilter>("all");
   const [showAll, setShowAll] = useState(false);
   const [groupByProject, setGroupByProject] = useState(true);
@@ -154,8 +155,8 @@ export default function BrowseBlocksPage() {
             value={tradeTypeFilter}
             onChange={(e) => setTradeTypeFilter(e.target.value)}
           >
-            {myTrades.length > 0 && <option value={MY_TRADES}>My trades ({myTrades.join(", ")})</option>}
             <option value="">All Trade Types</option>
+            {myTrades.length > 0 && <option value={MY_TRADES}>My trades ({myTrades.join(", ")})</option>}
             {TRADE_TYPES.map((t) => (
               <option key={t} value={t}>{t}</option>
             ))}

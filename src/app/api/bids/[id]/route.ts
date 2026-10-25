@@ -54,6 +54,10 @@ export async function PUT(
     if (bid.status !== "needs_confirmation") {
       return NextResponse.json({ error: "This bid has no schedule change to confirm" }, { status: 400 });
     }
+    const pending = await queryOne("SELECT pending_delay_days FROM blocks WHERE id = ?", [bid.block_id]);
+    if (pending?.pending_delay_days != null) {
+      return NextResponse.json({ error: "You proposed different dates; the owner is deciding on them" }, { status: 400 });
+    }
     // Confirming the shifted dates keeps the award
     await execute("UPDATE bids SET delay_confirmed = ?, status = 'accepted', updated_at = datetime('now') WHERE id = ?", [delay_confirmed ? 1 : 0, Number(id)]);
 

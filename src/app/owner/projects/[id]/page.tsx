@@ -6,11 +6,12 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { StatusBadge } from "@/components/StatusBadge";
 import { TRADE_TYPES } from "@/lib/trades";
-import { ScheduledBlock, addDays, bidFinish, checkBidSchedule, downstreamClosure } from "@/lib/schedule";
+import { ScheduledBlock, addDays, bidFinish, checkBidSchedule, daysBetween, downstreamClosure, expectedFinish } from "@/lib/schedule";
 import { GanttChart } from "@/components/GanttChart";
 import { DurationHint } from "@/components/DurationHint";
 import { Attachments } from "@/components/Attachments";
-import { suggestSchedule } from "@/lib/durations";
+import { alignToDependencies, earliestStart, suggestSchedule } from "@/lib/durations";
+import { Scale, projectScale } from "@/lib/benchmarks";
 import { Block, Bid, Project, Appreciation, ProgressUpdate } from "@/lib/types";
 import {
   ArrowLeft, ChevronDown, ChevronUp, DollarSign, Heart,
@@ -123,16 +124,20 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     if (!scheduleStart) return;
     setScheduling(true);
     const indexById = new Map(blocks.map((b, i) => [b.id, i]));
-    const suggested = suggestSchedule(
-      blocks.map((b) => ({
+    const scale = projectScale(project?.project_type, project?.title);
+    const schedulable = blocks.map((b) => ({
         title: b.title,
         trade_type: b.trade_type,
         depends_on: (b.dependencies || []).map((d) => indexById.get(d)).filter((i): i is number => i !== undefined),
         start: b.desired_start_date,
         finish: b.desired_completion_date || b.actual_completion_date?.slice(0, 10) || null,
-      })),
-      scheduleStart
-    );
+      }));
+    const filled = suggestSchedule(schedulable, scheduleStart, scale);
+    // Then move any block that would start before its dependencies finish
+    const suggested = alignToDependencies(
+      schedulable.map((b, i) => ({ ...b, start: filled[i].start, finish: filled[i].finish })),
+      scale
+    ).map((d, i) => ({ start: d.start || filled[i].start, finish: d.finish || filled[i].finish }));
     for (let i = 0; i < blocks.length; i++) {
       const b = blocks[i];
       if (b.status === "completed") continue;
@@ -317,13 +322,20 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
             <div className="flex items-start gap-3">
               <AlertTriangle className="w-5 h-5 text-red-600 mt-0.5 shrink-0" />
               <div className="flex-1 min-w-0">
-                <h2 className="font-semibold text-red-800">Delay needs your decision: {delayed.title}</h2>
+                <h2 className="font-semibold text-red-800">
+                  {delayed.status === "delayed" ? "Delay needs your decision" : "New dates need your decision"}: {delayed.title}
+                </h2>
                 <p className="text-sm text-red-700 mt-1">
-                  {delayed.awarded_trade ? `${delayed.awarded_trade} now expects` : "Now expected"} to finish{" "}
+                  {delayed.status === "delayed"
+                    ? <>{delayed.awarded_trade || "The trade"} confirmed a delay and now expects to finish </>
+                    : <>{delayed.awarded_trade || "The trade"} can&apos;t make the shifted dates and proposes finishing </>}
                   <strong>{delayed.estimated_completion_date}</strong>
                   {delayed.delay_baseline_date && <> instead of {delayed.delay_baseline_date}</>}
                   {days > 0 && <> &mdash; <strong>{days} day{days !== 1 ? "s" : ""} late</strong></>}.
                 </p>
+                {delayed.pending_delay_reason && (
+                  <p className="text-sm text-gray-700 mt-1 italic">&ldquo;{delayed.pending_delay_reason}&rdquo;</p>
+                )}
                 {affected.length > 0 ? (
                   <div className="mt-3">
                     <p className="text-xs font-medium text-red-800 uppercase mb-1">
@@ -349,11 +361,13 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                 )}
                 <div className="flex flex-wrap gap-2 mt-4">
                   <button onClick={() => decideDelay(delayed, "shift")} className="btn-primary btn-sm">
-                    {affected.length > 0 && days > 0 ? `Accept delay & shift ${affected.length} block${affected.length !== 1 ? "s" : ""}` : "Accept delay"}
+                    {affected.length > 0 && days > 0
+                      ? `Accept new date & move ${affected.length} later block${affected.length !== 1 ? "s" : ""}`
+                      : "Accept new date"}
                   </button>
                   {delayed.status !== "completed" && (
                     <button onClick={() => decideDelay(delayed, "reopen")} className="btn-secondary btn-sm">
-                      Reopen for bids to stay on schedule
+                      Reopen for bids instead
                     </button>
                   )}
                 </div>
@@ -362,6 +376,34 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
           </div>
         );
       })}
+
+      {/* Shifted dates the downstream trades haven't answered yet */}
+      {(() => {
+        // Proposals already waiting on the owner show in the decision banner instead
+        const waiting = projectBids.filter((bid) =>
+          bid.status === "needs_confirmation" && blocks.find((b) => b.id === bid.block_id)?.pending_delay_days == null
+        );
+        if (waiting.length === 0) return null;
+        return (
+          <div className="mb-6 p-4 rounded-xl border border-amber-200 bg-amber-50">
+            <h2 className="font-semibold text-amber-900 flex items-center gap-2">
+              <Clock className="w-4 h-4" />
+              Waiting on {waiting.length} trade{waiting.length !== 1 ? "s" : ""} to confirm new dates
+            </h2>
+            <p className="text-sm text-amber-800 mt-1">
+              Each trade either confirms or proposes dates they can make; a proposal comes back to you to accept or reopen for bids.
+            </p>
+            <ul className="mt-2 text-sm text-gray-700 space-y-0.5">
+              {waiting.map((bid) => (
+                <li key={bid.id}>
+                  <span className="font-medium">{bid.block_title}</span> &middot; {bid.trade_name}
+                  {bid.start_date && <span className="text-gray-500"> &middot; new start {bid.start_date}</span>}
+                </li>
+              ))}
+            </ul>
+          </div>
+        );
+      })()}
 
       {/* Project Settings */}
       <div className="card mb-6">
@@ -398,11 +440,12 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
               disabled={!scheduleStart || scheduling}
               className="btn-secondary btn-sm"
             >
-              {scheduling ? "Filling dates..." : "Fill empty target dates"}
+              {scheduling ? "Updating dates..." : "Fill & align target dates"}
             </button>
           </div>
           <p className="text-xs text-gray-500 mt-2">
-            Uses typical job lengths and your block dependencies, starting from this date. Dates you&apos;ve already set are kept.
+            Fills empty dates with typical job lengths from published benchmarks, starting from this date, and moves any block
+            that would start before its dependencies finish. Other dates you&apos;ve set are kept.
           </p>
         </div>
       </div>
@@ -640,7 +683,13 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                         </button>
                       )}
                       {block.status !== "completed" && (
-                        <BlockEditButton block={block} blockDetail={blockDetail} onSave={saveBlockEdit} />
+                        <BlockEditButton
+                          block={block}
+                          blockDetail={blockDetail}
+                          onSave={saveBlockEdit}
+                          scale={projectScale(project.project_type, project.title)}
+                          budget={project.budget}
+                        />
                       )}
                     </div>
                     {!block.depends_on_completed && block.status !== "completed" && (
@@ -926,10 +975,14 @@ function BlockEditButton({
   block,
   blockDetail,
   onSave,
+  scale,
+  budget,
 }: {
   block: Block;
   blockDetail: Record<string, unknown>;
   onSave: (blockId: number, updates: Record<string, unknown>, reopenBids?: boolean) => Promise<void>;
+  scale: Scale;
+  budget: number | null;
 }) {
   const [editing, setEditing] = useState(false);
   const [editTitle, setEditTitle] = useState(block.title);
@@ -1005,12 +1058,40 @@ function BlockEditButton({
           <label className="label">Target Completion Date</label>
           <input className="input" type="date" value={editDesiredDate} min={editDesiredStart || undefined} onChange={(e) => setEditDesiredDate(e.target.value)} />
         </div>
+        {(() => {
+          const deps = (blockDetail.dependency_blocks as ScheduledBlock[]) || [];
+          const earliest = earliestStart(deps.map(expectedFinish));
+          if (!earliest) return null;
+          const tooEarly = !!editDesiredStart && editDesiredStart < earliest;
+          return (
+            <p className={`sm:col-span-2 -mt-1 text-xs ${tooEarly ? "text-amber-700" : "text-primary-700"}`}>
+              Earliest start {earliest}: the day after {deps.map((d) => d.title).join(", ")} {deps.length === 1 ? "is" : "are"} expected to finish.
+              {editDesiredStart !== earliest && (
+                <button
+                  type="button"
+                  className="ml-2 text-primary-600 hover:underline"
+                  onClick={() => {
+                    // Keep the block's length when moving its start
+                    const length = editDesiredStart && editDesiredDate && editDesiredDate >= editDesiredStart
+                      ? daysBetween(editDesiredStart, editDesiredDate) : null;
+                    setEditDesiredStart(earliest);
+                    if (length !== null) setEditDesiredDate(addDays(earliest, length));
+                  }}
+                >
+                  Start then
+                </button>
+              )}
+            </p>
+          );
+        })()}
         <DurationHint
           title={editTitle}
           tradeType={editTradeType}
           start={editDesiredStart}
           finish={editDesiredDate}
           onApply={setEditDesiredDate}
+          scale={scale}
+          budget={budget}
         />
         <div>
           <label className="label">Special Requirements</label>

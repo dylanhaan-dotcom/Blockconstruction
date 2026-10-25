@@ -34,6 +34,8 @@ export interface Project {
   block_count?: number;
   completed_blocks?: number;
   total_awarded?: number;
+  delays_to_decide?: number;
+  awaiting_confirmations?: number;
 }
 
 export type BlockStatus = "pending" | "open_for_bids" | "awarded" | "in_progress" | "completed" | "delayed";
@@ -68,6 +70,7 @@ export interface Block {
   scheduled_finish?: string | null;
   delay_baseline_date?: string | null;
   pending_delay_days?: number | null;
+  pending_delay_reason?: string | null;
 }
 
 export type BidStatus = "pending" | "accepted" | "rejected" | "revised" | "needs_confirmation";

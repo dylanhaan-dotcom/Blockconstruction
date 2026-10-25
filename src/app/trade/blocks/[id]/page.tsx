@@ -7,12 +7,12 @@ import Link from "next/link";
 import { StatusBadge } from "@/components/StatusBadge";
 import { ScheduleTimeline, TimelineRow } from "@/components/ScheduleTimeline";
 import { Attachments } from "@/components/Attachments";
-import { Bid, ProgressUpdate } from "@/lib/types";
+import { Bid, Block, ProgressUpdate } from "@/lib/types";
 import {
-  ScheduledBlock, bidFinish, checkBidSchedule, expectedFinish, expectedStart, targetWindow,
+  ScheduledBlock, bidFinish, checkBidSchedule, daysBetween, downstreamClosure, expectedFinish, expectedStart, targetWindow,
 } from "@/lib/schedule";
 import {
-  ArrowLeft, MapPin, Calendar, Clock, CheckCircle2,
+  ArrowLeft, MapPin, Calendar, Clock, CheckCircle2, ChevronLeft, ChevronRight, Layers,
   AlertTriangle, Send, ArrowRight, ClipboardEdit, Pencil, CalendarCheck
 } from "lucide-react";
 
@@ -26,6 +26,7 @@ interface BlockDetail {
   trade_type: string | null;
   special_requirements: string | null;
   pending_delay_days: number | null;
+  delay_baseline_date: string | null;
   desired_start_date: string | null;
   desired_completion_date: string | null;
   estimated_completion_date: string | null;
@@ -69,10 +70,28 @@ export default function TradeBlockDetailPage({ params }: { params: Promise<{ id:
   const [progressNotes, setProgressNotes] = useState("");
   const [progressEstDate, setProgressEstDate] = useState("");
 
+  const [projectBlocks, setProjectBlocks] = useState<Block[]>([]);
+  // Reporting a delay takes a confirmation step
+  const [confirmingDelay, setConfirmingDelay] = useState(false);
+  // A downstream trade proposing dates they can make instead of the shifted ones
+  const [proposingBidId, setProposingBidId] = useState<number | null>(null);
+  const [proposeStart, setProposeStart] = useState("");
+  const [proposeDuration, setProposeDuration] = useState("");
+  const [proposeReason, setProposeReason] = useState("");
+  const [proposeError, setProposeError] = useState("");
+  const [justSubmitted, setJustSubmitted] = useState<string | null>(null);
+
   const fetchBlock = useCallback(() => {
     fetch(`/api/blocks/${id}`).then((r) => r.json()).then((data) => {
       setBlock(data);
       setLoading(false);
+      // The rest of the project, so the trade can move through it without leaving this page
+      if (data?.project_id) {
+        fetch(`/api/blocks?project_id=${data.project_id}`)
+          .then((r) => (r.ok ? r.json() : []))
+          .then(setProjectBlocks)
+          .catch(() => {});
+      }
     });
   }, [id]);
 
@@ -87,6 +106,16 @@ export default function TradeBlockDetailPage({ params }: { params: Promise<{ id:
     setBidLicense(currentUser.license_info || "");
     setBidInsurance(currentUser.insurance_info || "");
   }, [currentUser, router, fetchBlock]);
+
+  // Moving to another block in the project starts fresh
+  useEffect(() => {
+    setJustSubmitted(null);
+    setShowBidForm(false);
+    setShowProgressForm(false);
+    setConfirmingDelay(false);
+    setProposingBidId(null);
+    setRevisingBidId(null);
+  }, [id]);
 
   // Fill the bid's dates with the owner's target window
   const matchOwnerSchedule = () => {
@@ -136,18 +165,20 @@ export default function TradeBlockDetailPage({ params }: { params: Promise<{ id:
     };
 
     // A revision edits the existing bid in place instead of creating a new one
-    if (revisingBidId) {
-      await fetch(`/api/bids/${revisingBidId}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...terms, revision_reason: revisionReason || null }),
-      });
-    } else {
-      await fetch("/api/bids", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...terms, block_id: Number(id) }),
-      });
+    const res = revisingBidId
+      ? await fetch(`/api/bids/${revisingBidId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...terms, revision_reason: revisionReason || null }),
+        })
+      : await fetch("/api/bids", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...terms, block_id: Number(id) }),
+        });
+    if (res.ok) {
+      setJustSubmitted(revisingBidId ? "Bid updated" : "Bid submitted");
+      window.scrollTo({ top: 0, behavior: "smooth" });
     }
 
     setShowBidForm(false);
@@ -169,9 +200,43 @@ export default function TradeBlockDetailPage({ params }: { params: Promise<{ id:
     refreshNotifications();
   };
 
+  const startProposal = (bid: Bid) => {
+    setProposingBidId(bid.id);
+    setProposeStart(bid.start_date || "");
+    setProposeDuration(bid.duration_days ? String(bid.duration_days) : "");
+    setProposeReason("");
+    setProposeError("");
+  };
+
+  const submitProposal = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!proposingBidId) return;
+    setSubmitting(true);
+    setProposeError("");
+    const res = await fetch(`/api/bids/${proposingBidId}/propose`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ start_date: proposeStart, duration_days: Number(proposeDuration), reason: proposeReason }),
+    });
+    setSubmitting(false);
+    if (!res.ok) {
+      setProposeError((await res.json().catch(() => ({}))).error || "Could not send your dates");
+      return;
+    }
+    setProposingBidId(null);
+    fetchBlock();
+    refreshNotifications();
+  };
+
   const submitProgress = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentUser) return;
+    // A delay is only sent once the trade has reviewed what it affects
+    if (progressStatus === "delayed" && !confirmingDelay) {
+      setConfirmingDelay(true);
+      return;
+    }
+    setConfirmingDelay(false);
     setSubmitting(true);
 
     await fetch(`/api/blocks/${id}/progress`, {
@@ -207,6 +272,17 @@ export default function TradeBlockDetailPage({ params }: { params: Promise<{ id:
   const isAssignedTrade = !!myAcceptedBid;
   const canBid = block.status === "open_for_bids" || block.status === "awarded";
   const canUpdateProgress = isAssignedTrade && (block.status === "awarded" || block.status === "in_progress" || block.status === "delayed");
+
+  // What a reported delay is measured against, and which later blocks it would move
+  const delayBaseline =
+    block.delay_baseline_date?.slice(0, 10) ||
+    block.estimated_completion_date?.slice(0, 10) ||
+    (myAcceptedBid ? bidFinish(myAcceptedBid.start_date, myAcceptedBid.duration_days) : null) ||
+    block.desired_completion_date?.slice(0, 10) ||
+    null;
+  const delayAffects = downstreamClosure(block.id, projectBlocks)
+    .map((dsId) => projectBlocks.find((b) => b.id === dsId))
+    .filter((b): b is Block => !!b && b.status !== "completed");
 
   // Schedule: the owner's target leads; the trade's dates (live from the form while it's open) are checked against it.
   const upstream = block.dependency_blocks || [];
@@ -256,12 +332,69 @@ export default function TradeBlockDetailPage({ params }: { params: Promise<{ id:
     )
   );
 
+  // Moving through the project: blocks still open for bids (or with the trade's bid still in play), in project order
+  const navBlocks = projectBlocks.filter((b) =>
+    b.id === block.id || b.status === "open_for_bids" || b.my_bid_status === "pending" || b.my_bid_status === "needs_confirmation"
+  );
+  const navIndex = navBlocks.findIndex((b) => b.id === block.id);
+  const prevBlock = navIndex > 0 ? navBlocks[navIndex - 1] : null;
+  const nextBlock = navIndex >= 0 && navIndex < navBlocks.length - 1 ? navBlocks[navIndex + 1] : null;
+  // After bidding, suggest the next open block without a bid, wrapping around to the start of the project
+  const ordered = [...navBlocks.slice(navIndex + 1), ...navBlocks.slice(0, Math.max(navIndex, 0))];
+  const nextToBid = ordered.find((b) => b.status === "open_for_bids" && !b.my_bid_id) || null;
+  const remainingOpen = projectBlocks.filter((b) => b.id !== block.id && b.status === "open_for_bids" && !b.my_bid_id).length;
+
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 py-6">
-      <Link href="/trade/blocks" className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 mb-4">
-        <ArrowLeft className="w-4 h-4" />
-        Back to Blocks
-      </Link>
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <nav className="flex items-center gap-1.5 text-sm text-gray-500 min-w-0">
+          <Link href="/trade/blocks" className="inline-flex items-center gap-1 hover:text-gray-700 shrink-0">
+            <ArrowLeft className="w-4 h-4" />
+            Browse Blocks
+          </Link>
+          <span>/</span>
+          <Link href={`/trade/projects/${block.project_id}`} className="hover:text-gray-700 truncate">
+            {block.project_title}
+          </Link>
+        </nav>
+        {navBlocks.length > 1 && (
+          <div className="flex items-center gap-2 text-sm">
+            <span className="text-gray-400">
+              {navIndex + 1} of {navBlocks.length} open in this project
+            </span>
+            {prevBlock ? (
+              <Link href={`/trade/blocks/${prevBlock.id}`} className="btn-secondary btn-sm flex items-center gap-1" title={prevBlock.title}>
+                <ChevronLeft className="w-4 h-4" /> Previous
+              </Link>
+            ) : null}
+            {nextBlock ? (
+              <Link href={`/trade/blocks/${nextBlock.id}`} className="btn-secondary btn-sm flex items-center gap-1" title={nextBlock.title}>
+                Next <ChevronRight className="w-4 h-4" />
+              </Link>
+            ) : null}
+          </div>
+        )}
+      </div>
+
+      {justSubmitted && (
+        <div className="mb-6 p-4 rounded-xl border border-green-200 bg-green-50 flex flex-wrap items-center justify-between gap-3">
+          <p className="text-sm text-green-800 flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4" />
+            {justSubmitted} for &ldquo;{block.title}&rdquo;.
+            {remainingOpen > 0
+              ? ` ${remainingOpen} more open block${remainingOpen !== 1 ? "s" : ""} in this project.`
+              : " You've bid on every open block in this project."}
+          </p>
+          <div className="flex items-center gap-2">
+            <Link href={`/trade/projects/${block.project_id}`} className="btn-secondary btn-sm">Whole project</Link>
+            {nextToBid && (
+              <Link href={`/trade/blocks/${nextToBid.id}`} className="btn-primary btn-sm flex items-center gap-1">
+                Next: {nextToBid.title} <ChevronRight className="w-4 h-4" />
+              </Link>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Block Header */}
       <div className="card mb-6">
@@ -511,7 +644,7 @@ export default function TradeBlockDetailPage({ params }: { params: Promise<{ id:
             <div className="grid sm:grid-cols-2 gap-4">
               <div>
                 <label className="label">Status *</label>
-                <select className="input" value={progressStatus} onChange={(e) => setProgressStatus(e.target.value)}>
+                <select className="input" value={progressStatus} onChange={(e) => { setProgressStatus(e.target.value); setConfirmingDelay(false); }}>
                   <option value="in_progress">In Progress</option>
                   <option value="completed">Completed</option>
                   <option value="delayed">Delayed</option>
@@ -520,7 +653,7 @@ export default function TradeBlockDetailPage({ params }: { params: Promise<{ id:
               {progressStatus === "delayed" && (
                 <div>
                   <label className="label">New Estimated Completion Date *</label>
-                  <input className="input" type="date" value={progressEstDate} onChange={(e) => setProgressEstDate(e.target.value)} required />
+                  <input className="input" type="date" value={progressEstDate} onChange={(e) => { setProgressEstDate(e.target.value); setConfirmingDelay(false); }} required />
                 </div>
               )}
               <div className="sm:col-span-2">
@@ -528,60 +661,127 @@ export default function TradeBlockDetailPage({ params }: { params: Promise<{ id:
                 <textarea className="input" rows={3} value={progressNotes} onChange={(e) => setProgressNotes(e.target.value)} placeholder="Describe current progress, any issues, etc..." />
               </div>
             </div>
-            {progressStatus === "delayed" && (
+            {progressStatus === "delayed" && !confirmingDelay && (
               <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg">
                 <p className="text-sm text-amber-800 flex items-center gap-1.5">
                   <AlertTriangle className="w-4 h-4" />
-                  The project owner will decide whether to accept the new date and shift the downstream blocks, or reopen this block for bids. Downstream trades are told a delay was reported.
+                  You&apos;ll review and confirm the delay before it&apos;s sent to the project owner.
                 </p>
               </div>
             )}
+            {progressStatus === "delayed" && confirmingDelay && (
+              <div className="mt-3 p-4 bg-red-50 border border-red-200 rounded-lg text-sm text-red-900 space-y-2">
+                <p className="font-semibold">Confirm this delay</p>
+                <p>
+                  &ldquo;{block.title}&rdquo; will finish <strong>{progressEstDate}</strong>
+                  {delayBaseline && <> instead of {delayBaseline}</>}
+                  {delayBaseline && progressEstDate && daysBetween(delayBaseline, progressEstDate) > 0 && (
+                    <> &mdash; <strong>{daysBetween(delayBaseline, progressEstDate)} days late</strong></>
+                  )}.
+                </p>
+                {delayAffects.length > 0 ? (
+                  <p>
+                    If the owner accepts it, {delayAffects.length} later block{delayAffects.length !== 1 ? "s" : ""} move
+                    {delayAffects.length === 1 ? "s" : ""} and their trades are asked to reconfirm: {delayAffects.map((b) => b.title).join(", ")}.
+                  </p>
+                ) : (
+                  <p>No later blocks depend on this one.</p>
+                )}
+                <p>The owner can also reopen this block for bids instead.</p>
+              </div>
+            )}
             <div className="flex items-center gap-3 mt-4">
-              <button type="submit" disabled={submitting} className="btn-primary">
-                {submitting ? "Updating..." : "Update Progress"}
+              <button type="submit" disabled={submitting} className={confirmingDelay ? "btn-danger" : "btn-primary"}>
+                {submitting ? "Updating..." : confirmingDelay ? "Confirm delay" : progressStatus === "delayed" ? "Review delay" : "Update Progress"}
               </button>
-              <button type="button" onClick={() => setShowProgressForm(false)} className="btn-secondary">Cancel</button>
+              <button
+                type="button"
+                onClick={() => (confirmingDelay ? setConfirmingDelay(false) : setShowProgressForm(false))}
+                className="btn-secondary"
+              >
+                {confirmingDelay ? "Back" : "Cancel"}
+              </button>
             </div>
           </form>
         </div>
       )}
 
-      {/* Delay Confirmation Banner */}
+      {/* Shifted dates waiting on this trade */}
       {myNeedsConfirmation.length > 0 && (
         <div className="mb-6 p-4 bg-amber-50 border-2 border-amber-300 rounded-xl">
           <div className="flex items-start gap-3">
             <AlertTriangle className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" />
-            <div className="flex-1">
-              <h3 className="font-semibold text-amber-800">Schedule Confirmation Required</h3>
-              <p className="text-sm text-amber-700 mt-1">
-                An upstream block was delayed and the owner moved your dates to match. Please confirm you can work to the new dates, or revise your bid with new terms for the owner to accept.
-              </p>
+            <div className="flex-1 min-w-0">
+              {block.pending_delay_days != null ? (
+                <>
+                  <h3 className="font-semibold text-amber-800">Waiting for the owner</h3>
+                  <p className="text-sm text-amber-700 mt-1">
+                    You proposed finishing on {block.estimated_completion_date}. The owner will accept your dates or reopen this block for bids.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <h3 className="font-semibold text-amber-800">Can you make the new dates?</h3>
+                  <p className="text-sm text-amber-700 mt-1">
+                    An earlier block was delayed and the owner moved your dates to match. Confirm you can make them, or tell the owner the dates you can make.
+                  </p>
+                </>
+              )}
               {myNeedsConfirmation.map((bid) => (
                 <div key={bid.id} className="mt-3 p-3 bg-white rounded-lg border border-amber-200">
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2">
-                      <StatusBadge status={bid.status} />
-                      <span className="text-sm font-medium">${bid.price.toLocaleString()}</span>
+                  <p className="text-sm text-gray-800">
+                    New dates: <strong>{bid.start_date || "?"} → {bidFinish(bid.start_date, bid.duration_days) || "?"}</strong>
+                    <span className="text-gray-500"> ({bid.duration_days || "?"} days) &middot; ${bid.price.toLocaleString()}</span>
+                  </p>
+                  {block.pending_delay_days == null && proposingBidId !== bid.id && (
+                    <div className="flex flex-wrap items-center gap-2 mt-3">
+                      <button
+                        onClick={() => confirmSchedule(bid.id)}
+                        disabled={submitting}
+                        className="btn-primary btn-sm flex items-center gap-1.5"
+                      >
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        {submitting ? "Confirming..." : "I can make these dates"}
+                      </button>
+                      <button onClick={() => startProposal(bid)} className="btn-secondary btn-sm flex items-center gap-1.5">
+                        <Calendar className="w-3.5 h-3.5" />
+                        I can&apos;t make these dates
+                      </button>
                     </div>
-                  </div>
-                  {bid.start_date && <p className="text-xs text-gray-500">Start: {bid.start_date} | Duration: {bid.duration_days || "?"} days</p>}
-                  <div className="flex items-center gap-2 mt-3">
-                    <button
-                      onClick={() => confirmSchedule(bid.id)}
-                      disabled={submitting}
-                      className="btn-primary btn-sm flex items-center gap-1.5"
-                    >
-                      <CheckCircle2 className="w-3.5 h-3.5" />
-                      {submitting ? "Confirming..." : "Confirm Schedule"}
-                    </button>
-                    <button
-                      onClick={() => openReviseBidForm(bid)}
-                      className="btn-secondary btn-sm flex items-center gap-1.5"
-                    >
-                      <Pencil className="w-3.5 h-3.5" />
-                      Revise Bid
-                    </button>
-                  </div>
+                  )}
+                  {proposingBidId === bid.id && (
+                    <form onSubmit={submitProposal} className="mt-3 space-y-3">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="label">Start you can make *</label>
+                          <input className="input" type="date" value={proposeStart} onChange={(e) => setProposeStart(e.target.value)} required />
+                        </div>
+                        <div>
+                          <label className="label">Days *</label>
+                          <input className="input" type="number" min="1" value={proposeDuration} onChange={(e) => setProposeDuration(e.target.value)} required />
+                        </div>
+                      </div>
+                      <input
+                        className="input"
+                        value={proposeReason}
+                        onChange={(e) => setProposeReason(e.target.value)}
+                        placeholder="Why (e.g., crew booked on another job until then)"
+                      />
+                      {proposeStart && Number(proposeDuration) > 0 && (
+                        <p className="text-xs text-gray-600">
+                          You&apos;d finish {bidFinish(proposeStart, Number(proposeDuration))}. The owner decides whether to accept this
+                          (moving any later blocks) or reopen this block for bids.
+                        </p>
+                      )}
+                      {proposeError && <p className="text-xs text-red-600">{proposeError}</p>}
+                      <div className="flex items-center gap-2">
+                        <button type="submit" disabled={submitting} className="btn-primary btn-sm">
+                          {submitting ? "Sending..." : "Send my dates to the owner"}
+                        </button>
+                        <button type="button" onClick={() => setProposingBidId(null)} className="btn-secondary btn-sm">Cancel</button>
+                      </div>
+                    </form>
+                  )}
                 </div>
               ))}
             </div>
@@ -634,6 +834,48 @@ export default function TradeBlockDetailPage({ params }: { params: Promise<{ id:
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* The rest of the project */}
+      {projectBlocks.length > 1 && (
+        <div className="card mb-6">
+          <div className="flex items-center justify-between gap-2 mb-3">
+            <h2 className="font-semibold flex items-center gap-2">
+              <Layers className="w-4 h-4 text-primary-600" />
+              In this project
+            </h2>
+            <Link href={`/trade/projects/${block.project_id}`} className="text-sm text-primary-600 hover:underline">
+              Bid on several at once
+            </Link>
+          </div>
+          <ul className="divide-y divide-gray-100">
+            {projectBlocks.map((b) => {
+              const isCurrent = b.id === block.id;
+              return (
+                <li key={b.id}>
+                  <Link
+                    href={`/trade/blocks/${b.id}`}
+                    className={`flex flex-wrap items-center justify-between gap-2 py-2 px-2 -mx-2 rounded-lg ${isCurrent ? "bg-primary-50" : "hover:bg-gray-50"}`}
+                  >
+                    <span className={`text-sm ${isCurrent ? "font-semibold text-primary-700" : "text-gray-800"}`}>
+                      {b.title}
+                      {b.trade_type && <span className="text-xs text-gray-400 ml-2">{b.trade_type}</span>}
+                    </span>
+                    <span className="flex items-center gap-2">
+                      {b.my_bid_id && b.my_bid_status ? (
+                        <span className="text-xs text-primary-700 flex items-center gap-1">
+                          You bid {b.my_bid_price != null ? `$${b.my_bid_price.toLocaleString()}` : ""} <StatusBadge status={b.my_bid_status} />
+                        </span>
+                      ) : (
+                        <StatusBadge status={b.status} />
+                      )}
+                    </span>
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
         </div>
       )}
 
