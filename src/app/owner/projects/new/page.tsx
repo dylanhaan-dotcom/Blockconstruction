@@ -3,9 +3,11 @@
 import React, { useEffect, useState } from "react";
 import { useApp } from "@/lib/context";
 import { TRADE_TYPES } from "@/lib/trades";
+import { suggestSchedule } from "@/lib/durations";
+import { DurationHint } from "@/components/DurationHint";
 import { useRouter } from "next/navigation";
 import { ProjectTemplate } from "@/lib/types";
-import { ArrowLeft, Plus, Trash2, FileText } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, FileText, CalendarCheck } from "lucide-react";
 import Link from "next/link";
 
 interface BlockForm {
@@ -29,6 +31,7 @@ export default function NewProjectPage() {
   const [budget, setBudget] = useState("");
   const [allowParallelBidding, setAllowParallelBidding] = useState(false);
   const [blocks, setBlocks] = useState<BlockForm[]>([]);
+  const [projectStart, setProjectStart] = useState("");
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -68,6 +71,26 @@ export default function NewProjectPage() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (updated[index] as any)[field] = value;
     setBlocks(updated);
+  };
+
+  // Fill empty target dates from typical durations, chained through dependencies
+  const applySuggestedSchedule = () => {
+    if (!projectStart) return;
+    const suggested = suggestSchedule(
+      blocks.map((b) => ({
+        title: b.title,
+        trade_type: b.trade_type || null,
+        depends_on: b.depends_on,
+        start: b.desired_start_date || null,
+        finish: b.desired_completion_date || null,
+      })),
+      projectStart
+    );
+    setBlocks(blocks.map((b, i) => ({
+      ...b,
+      desired_start_date: suggested[i].start,
+      desired_completion_date: suggested[i].finish,
+    })));
   };
 
   const removeBlock = (index: number) => {
@@ -211,6 +234,30 @@ export default function NewProjectPage() {
             </button>
           </div>
 
+          {blocks.length > 0 && (
+            <div className="card mb-4 bg-primary-50 border-primary-100">
+              <div className="flex flex-wrap items-end gap-3">
+                <div>
+                  <label className="label">Project Start Date</label>
+                  <input className="input" type="date" value={projectStart} onChange={(e) => setProjectStart(e.target.value)} />
+                </div>
+                <button
+                  type="button"
+                  onClick={applySuggestedSchedule}
+                  disabled={!projectStart}
+                  className="btn-secondary flex items-center gap-1.5"
+                >
+                  <CalendarCheck className="w-4 h-4" />
+                  Suggest schedule
+                </button>
+              </div>
+              <p className="text-xs text-gray-600 mt-2">
+                Fills in empty target dates using typical job lengths, starting each block after the blocks it depends on.
+                Dates you&apos;ve already set are kept, and you can change any date afterwards.
+              </p>
+            </div>
+          )}
+
           {blocks.length === 0 ? (
             <div className="card text-center py-8">
               <p className="text-gray-500 mb-3">No blocks yet. Add blocks or start from a template above.</p>
@@ -285,6 +332,13 @@ export default function NewProjectPage() {
                         onChange={(e) => updateBlock(index, "desired_completion_date", e.target.value)}
                       />
                     </div>
+                    <DurationHint
+                      title={block.title}
+                      tradeType={block.trade_type}
+                      start={block.desired_start_date}
+                      finish={block.desired_completion_date}
+                      onApply={(finish) => updateBlock(index, "desired_completion_date", finish)}
+                    />
                     <div>
                       <label className="label">Dependencies</label>
                       <select
@@ -337,3 +391,4 @@ export default function NewProjectPage() {
     </div>
   );
 }
+

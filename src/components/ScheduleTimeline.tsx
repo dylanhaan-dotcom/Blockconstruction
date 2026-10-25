@@ -7,7 +7,7 @@ export interface TimelineRow {
   key: string;
   label: string;
   sublabel?: string;
-  kind: "upstream" | "target" | "proposal" | "downstream";
+  kind: "upstream" | "target" | "proposal" | "downstream" | "block" | "match";
   start: string | null;
   finish: string | null;
   warn?: boolean;
@@ -18,6 +18,17 @@ const KIND_STYLES: Record<TimelineRow["kind"], string> = {
   target: "bg-primary-200 border border-dashed border-primary-500",
   proposal: "bg-accent-500",
   downstream: "bg-gray-300",
+  block: "bg-gray-300",
+  match: "bg-primary-400",
+};
+
+const LEGEND: Record<TimelineRow["kind"], string> = {
+  upstream: "Upstream",
+  target: "Owner's target",
+  proposal: "Your dates",
+  downstream: "Downstream",
+  block: "Other trades",
+  match: "Your trades",
 };
 
 // Horizontal bars on one shared date axis. A row with only one date is drawn as a marker on that day.
@@ -48,7 +59,7 @@ export function ScheduleTimeline({ rows }: { rows: TimelineRow[] }) {
         return (
           <div key={row.key} className="flex items-center gap-2">
             <div className="w-28 sm:w-44 shrink-0 min-w-0">
-              <p className={`text-xs font-medium truncate ${row.kind === "proposal" ? "text-accent-700" : row.kind === "target" ? "text-primary-700" : "text-gray-700"}`}>
+              <p className={`text-xs font-medium truncate ${row.kind === "proposal" ? "text-accent-700" : row.kind === "target" || row.kind === "match" ? "text-primary-700" : "text-gray-700"}`}>
                 {row.label}
               </p>
               {row.sublabel && <p className="text-[11px] text-gray-400 truncate">{row.sublabel}</p>}
@@ -74,11 +85,16 @@ export function ScheduleTimeline({ rows }: { rows: TimelineRow[] }) {
         );
       })}
       <div className="flex flex-wrap gap-x-4 gap-y-1 pt-1 text-[11px] text-gray-500">
-        <span className="flex items-center gap-1"><span className="w-3 h-2 rounded bg-gray-400" /> Upstream</span>
-        <span className="flex items-center gap-1"><span className="w-3 h-2 rounded bg-primary-200 border border-dashed border-primary-500" /> Owner&apos;s target</span>
-        <span className="flex items-center gap-1"><span className="w-3 h-2 rounded bg-accent-500" /> Your dates</span>
-        <span className="flex items-center gap-1"><span className="w-3 h-2 rounded bg-gray-300" /> Downstream</span>
-        <span className="flex items-center gap-1"><span className="w-2 h-2 rotate-45 bg-gray-400" /> Single known date</span>
+        {(Object.keys(LEGEND) as TimelineRow["kind"][])
+          .filter((kind) => rows.some((r) => r.kind === kind))
+          .map((kind) => (
+            <span key={kind} className="flex items-center gap-1">
+              <span className={`w-3 h-2 rounded ${KIND_STYLES[kind]}`} /> {LEGEND[kind]}
+            </span>
+          ))}
+        {rows.some((r) => !r.start !== !r.finish) && (
+          <span className="flex items-center gap-1"><span className="w-2 h-2 rotate-45 bg-gray-400" /> Single known date</span>
+        )}
       </div>
     </div>
   );

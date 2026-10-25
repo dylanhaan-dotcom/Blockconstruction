@@ -102,6 +102,17 @@ async function initializeSchema(db: Client) {
         is_read INTEGER DEFAULT 0,
         created_at TEXT DEFAULT (datetime('now'))
       )`,
+      `CREATE TABLE IF NOT EXISTS attachments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        block_id INTEGER REFERENCES blocks(id) ON DELETE CASCADE,
+        uploaded_by INTEGER NOT NULL REFERENCES users(id),
+        filename TEXT NOT NULL,
+        content_type TEXT NOT NULL,
+        size INTEGER NOT NULL,
+        data BLOB NOT NULL,
+        created_at TEXT DEFAULT (datetime('now'))
+      )`,
       `CREATE TABLE IF NOT EXISTS appreciations (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         from_user_id INTEGER NOT NULL REFERENCES users(id),
@@ -123,6 +134,9 @@ async function initializeSchema(db: Client) {
   await addColumnIfMissing(db, "users", "secondary_trades", "TEXT");
   await addColumnIfMissing(db, "users", "capabilities", "TEXT");
   await addColumnIfMissing(db, "blocks", "desired_start_date", "TEXT");
+  // A reported delay waiting for the owner's decision: the finish date before the delay and the days lost
+  await addColumnIfMissing(db, "blocks", "delay_baseline_date", "TEXT");
+  await addColumnIfMissing(db, "blocks", "pending_delay_days", "INTEGER");
 }
 
 async function addColumnIfMissing(db: Client, table: string, column: string, type: string) {

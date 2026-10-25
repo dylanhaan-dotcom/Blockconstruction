@@ -51,7 +51,11 @@ export async function PUT(
   }
 
   if (delay_confirmed !== undefined) {
-    await execute("UPDATE bids SET delay_confirmed = ?, status = 'pending', updated_at = datetime('now') WHERE id = ?", [delay_confirmed ? 1 : 0, Number(id)]);
+    if (bid.status !== "needs_confirmation") {
+      return NextResponse.json({ error: "This bid has no schedule change to confirm" }, { status: 400 });
+    }
+    // Confirming the shifted dates keeps the award
+    await execute("UPDATE bids SET delay_confirmed = ?, status = 'accepted', updated_at = datetime('now') WHERE id = ?", [delay_confirmed ? 1 : 0, Number(id)]);
 
     // Notify project owner
     const block = await queryOne("SELECT b.*, p.title as project_title, p.owner_id FROM blocks b JOIN projects p ON p.id = b.project_id WHERE b.id = ?", [bid.block_id]) as { title: string; project_title: string; project_id: number; owner_id: number };

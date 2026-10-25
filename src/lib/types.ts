@@ -64,6 +64,10 @@ export interface Block {
   my_bid_id?: number | null;
   my_bid_status?: BidStatus | null;
   my_bid_price?: number | null;
+  scheduled_start?: string | null;
+  scheduled_finish?: string | null;
+  delay_baseline_date?: string | null;
+  pending_delay_days?: number | null;
 }
 
 export type BidStatus = "pending" | "accepted" | "rejected" | "revised" | "needs_confirmation";
@@ -89,6 +93,9 @@ export interface Bid {
   trade_type?: string;
   trade_rating?: number;
   trade_rating_count?: number;
+  block_title?: string;
+  project_id?: number;
+  project_title?: string;
 }
 
 export interface ProgressUpdate {

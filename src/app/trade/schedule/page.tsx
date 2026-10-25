@@ -7,7 +7,7 @@ import Link from "next/link";
 import { StatusBadge } from "@/components/StatusBadge";
 import { GanttChart } from "@/components/GanttChart";
 import { Block, Bid } from "@/lib/types";
-import { ArrowLeft, Calendar, Clock, BarChart3, List } from "lucide-react";
+import { ArrowLeft, Calendar, Clock, BarChart3, List, ArrowRight } from "lucide-react";
 
 type ScheduleView = "gantt" | "list";
 
@@ -60,6 +60,17 @@ export default function TradeSchedulePage() {
       });
   }, [currentUser, router]);
 
+  // Show each project's blocks together, projects ordered by their earliest block
+  const projectGroups: { projectId: number; title: string; address: string; blocks: ScheduleBlock[] }[] = [];
+  for (const block of blocks) {
+    let group = projectGroups.find((g) => g.projectId === block.project_id);
+    if (!group) {
+      group = { projectId: block.project_id, title: block.project_title || "Project", address: block.project_address || "", blocks: [] };
+      projectGroups.push(group);
+    }
+    group.blocks.push(block);
+  }
+
   if (!currentUser || loading) {
     return <div className="flex items-center justify-center h-64"><p className="text-gray-500">Loading...</p></div>;
   }
@@ -108,13 +119,28 @@ export default function TradeSchedulePage() {
         </div>
       ) : (
         <>
+          <div className="space-y-8">
+          {projectGroups.map((group) => (
+            <section key={group.projectId}>
+              <div className="flex flex-wrap items-end justify-between gap-2 mb-3">
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-900">{group.title}</h2>
+                  <p className="text-sm text-gray-500">
+                    {group.address} &middot; {group.blocks.length} block{group.blocks.length !== 1 ? "s" : ""}
+                  </p>
+                </div>
+                <Link href={`/trade/projects/${group.projectId}`} className="text-sm text-primary-600 hover:underline flex items-center gap-1">
+                  Whole project schedule <ArrowRight className="w-3.5 h-3.5" />
+                </Link>
+              </div>
+
           {view === "gantt" && (
-            <GanttChart blocks={blocks} />
+            <GanttChart blocks={group.blocks} />
           )}
 
           {view === "list" && (
             <div className="space-y-3">
-              {blocks.map((block) => (
+              {group.blocks.map((block) => (
                 <Link
                   key={block.id}
                   href={`/trade/blocks/${block.id}`}
@@ -129,7 +155,6 @@ export default function TradeSchedulePage() {
                           <span className="text-xs text-gray-400">{block.trade_type}</span>
                         )}
                       </div>
-                      <p className="text-sm text-gray-500">{block.project_title} &middot; {block.project_address}</p>
                       <div className="flex items-center gap-4 mt-2 text-xs text-gray-500">
                         {block.bid_start_date && (
                           <span className="flex items-center gap-1">
@@ -166,6 +191,9 @@ export default function TradeSchedulePage() {
               ))}
             </div>
           )}
+            </section>
+          ))}
+          </div>
         </>
       )}
     </div>
